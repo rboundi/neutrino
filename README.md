@@ -4,79 +4,68 @@
 
 <h1 align="center">Neutrino</h1>
 
-<p align="center">A code editor for the Mac. It opens files in tabs, colours 27 languages and has regex find and replace. Free and open source.</p>
+<p align="center">A code editor for the Mac. Tabs, multiple cursors and regex find and replace, with syntaxes and themes installed as needed. Free and open source.</p>
 
 <p align="center">
-  <img src="docs/screenshot-dark.png" width="760" alt="Neutrino with four tabs open, a Swift file and the find bar showing a regex search with two of five matches highlighted">
+  <img src="docs/screenshot-dark.png" width="760" alt="Neutrino with four tabs, a Swift file and a regex search in the find bar">
 </p>
-
-Neutrino edits single files. There is no project sidebar, no plugin system and no language server. The app is about 2 MB, because syntaxes and themes are not bundled: you install the ones you use and they are downloaded from this repository.
 
 ## Features
 
 **Editing**
-- Tabs, using the standard macOS window tabs: drag to reorder, drag out to a new window, <kbd>⌘</kbd><kbd>T</kbd> for a new one
+- Native macOS tabs: drag to reorder or out to a new window
 - Line numbers, line wrapping, current line highlight, invisible characters
-- New lines keep the indentation of the line above. Brackets and quotes are closed as you type
-- Spaces or tabs, with any tab width. Makefiles and Go files always use tabs
-- The bracket matching the one beside the caret is highlighted. <kbd>⇧</kbd><kbd>⌘</kbd><kbd>M</kbd> jumps to it
-- Text size buttons in the status bar. The size you pick is used for every document from then on
+- Auto-indent, and auto-closing brackets and quotes
+- Spaces or tabs, any tab width
+- Matching bracket highlight, <kbd>⇧</kbd><kbd>⌘</kbd><kbd>M</kbd> to jump to it
+- Text size buttons in the status bar
 
 **Cursors and lines**
-- <kbd>⌘</kbd><kbd>D</kbd> selects the next occurrence of the selected text, so you can change them together
-- <kbd>⌥</kbd><kbd>⌘</kbd><kbd>↑</kbd> and <kbd>⌥</kbd><kbd>⌘</kbd><kbd>↓</kbd> add a cursor on the line above or below. <kbd>⌘</kbd>-click adds one anywhere, <kbd>⌥</kbd>-drag selects a column, <kbd>Esc</kbd> goes back to one cursor
-- Move lines up and down, duplicate, delete, join, sort, remove duplicates
-- Shift lines left and right, comment and uncomment, change case
-- **Filter Through Command** (<kbd>⌥</kbd><kbd>⌘</kbd><kbd>R</kbd>) sends the selection, or the whole text, to a shell command such as `sort -u` or `jq .` and replaces it with the output
+- Select the next occurrence with <kbd>⌘</kbd><kbd>D</kbd>
+- Add a cursor above or below with <kbd>⌥</kbd><kbd>⌘</kbd><kbd>↑</kbd> / <kbd>⌥</kbd><kbd>⌘</kbd><kbd>↓</kbd>, or anywhere with <kbd>⌘</kbd>-click
+- Column selection with <kbd>⌥</kbd>-drag
+- Move, duplicate, delete, join and sort lines, remove duplicates
+- Shift left and right, comment and uncomment, change case
+- Filter the selection through a shell command such as `sort -u` or `jq .` (<kbd>⌥</kbd><kbd>⌘</kbd><kbd>R</kbd>)
 
-**Find and replace** (<kbd>⌘</kbd><kbd>F</kbd>)
-- Plain text or regular expressions, match case, whole words
-- Matches are highlighted and counted as you type
-- Search the document, the selection, or all open documents
-- **Find All** lists every match with its line. Click one to go there. **Copy Matches** copies the matched text
-- **Replace All** is a single undo step
-- In regex replacements: `$1` or `\1` for groups, `${name}` for named groups, `$0` for the whole match, `\U…\E` and `\L…\E` to change case, `\u` and `\l` for one character, `\n` and `\t`
-- Recent searches are in the search field's menu
+**Find and replace**
+- Plain text or regex, match case, whole words
+- Live match count and highlighting
+- Search the document, the selection or all open documents
+- Find All lists every match; Copy Matches copies them
+- Replace All is one undo step
+- Regex replacements: `$1`, `${name}`, `\U…\E`, `\L…\E`, `\u`, `\l`, `\n`, `\t`
+- Recent searches
 
 **Navigation**
-- Go to line (<kbd>⌘</kbd><kbd>L</kbd>), also as `line:column`
-- Go to symbol (<kbd>⇧</kbd><kbd>⌘</kbd><kbd>O</kbd>) lists the functions, classes and headings of the document
-- <kbd>⌘</kbd><kbd>1</kbd> to <kbd>⌘</kbd><kbd>8</kbd> show that tab and <kbd>⌘</kbd><kbd>9</kbd> the last one. <kbd>⇧</kbd><kbd>⌘</kbd><kbd>T</kbd> reopens a closed tab
+- Go to Line (<kbd>⌘</kbd><kbd>L</kbd>), also `line:column`
+- Go to Symbol (<kbd>⇧</kbd><kbd>⌘</kbd><kbd>O</kbd>): functions, classes, headings
+- <kbd>⌘</kbd><kbd>1</kbd>…<kbd>⌘</kbd><kbd>9</kbd> to switch tabs, <kbd>⇧</kbd><kbd>⌘</kbd><kbd>T</kbd> to reopen a closed one
 
 **Files**
-- Changes are saved a few seconds after you stop typing and when you switch to another window or app. macOS keeps earlier versions (**File → Revert to Saved**)
-- With **Settings → General → Save changes automatically** off, files are written only when you save. Unsaved text is still recovered after a crash
-- A file's encoding, byte order mark and line endings are kept when saving. You can change them, or reopen with another encoding, from the status bar
-- Files changed by another app are reloaded when there are no unsaved changes
-- **File → Compare with Saved** shows what differs from the file on disk, as a diff
-- `.editorconfig` files are followed for indent style, indent size, trailing spaces and the final line break
-- Trailing spaces can be removed, and a final line break added, when you save
-- The documents from the last session are reopened
+- Autosave, with macOS versions. Can be turned off in Settings
+- Unsaved text is recovered after a crash
+- Encoding, byte order mark and line endings are preserved; change them from the status bar
+- Live reload when a file changes on disk
+- Compare with Saved shows a diff against the file on disk
+- `.editorconfig` support
+- Optional trailing-space removal and final line break on save
+- Tabs are restored on relaunch
 
 **Syntaxes**
-- None are built in. Install the ones you use from **Settings → Syntaxes** or from the syntax menu in the status bar, which offers the one that fits the open file
-- A syntax is loaded when a document uses it and unloaded when the last such document closes
-- Available: C, C++, C#, CSS, Diff, Dockerfile, Go, HTML, INI, Java, JavaScript, JSON, Kotlin, Lua, Makefile, Markdown, PHP, Python, Ruby, Rust, Shell, SQL, Swift, TOML, TypeScript, XML, YAML
-- A syntax is one JSON file of regular expressions. [docs/syntaxes.md](docs/syntaxes.md) describes the format
+- Installed from **Settings → Syntaxes** or the status bar, loaded only while in use
+- C, C++, C#, CSS, Diff, Dockerfile, Go, HTML, INI, Java, JavaScript, JSON, Kotlin, Lua, Makefile, Markdown, PHP, Python, Ruby, Rust, Shell, SQL, Swift, TOML, TypeScript, XML, YAML
+- Add your own as a JSON file: [docs/syntaxes.md](docs/syntaxes.md)
 
 **Themes**
-- The built-in colours follow the light, dark or system appearance
-- More themes are in **Settings → Appearance**: Dracula, GitHub Light, Monokai, Nord, One Dark, Solarized Dark, Solarized Light
-- A theme is one JSON file. [docs/themes.md](docs/themes.md) describes the format
+- Light, Dark or System
+- Dracula, GitHub Light, Monokai, Nord, One Dark, Solarized Dark and Solarized Light from **Settings → Appearance**
+- Add your own as a JSON file: [docs/themes.md](docs/themes.md)
 
-**Markdown**
-- **File → Preview in MDReader** (<kbd>⌥</kbd><kbd>⌘</kbd><kbd>P</kbd>) opens the file in [MDReader](https://github.com/rboundi/mdreader), a free Markdown reader from the same developer. It shows the rendered page and updates when the file is saved
-
-**Command line**
-- `neutrino main.c notes.txt` opens files as tabs
-- `neutrino main.c:42` opens at line 42
-- `git diff | neutrino` opens text from a pipe
-
-## Limits
-
-- Files above 4 million characters open without colours.
-- The whole file is held in memory. Neutrino asks before opening one larger than 150 MB.
-- Colouring is done with regular expressions, so it does not understand one language inside another, such as JavaScript in an HTML file.
+**Other**
+- `neutrino` command: `neutrino main.c`, `neutrino main.c:42` or `git diff | neutrino`
+- Preview Markdown in [MDReader](https://github.com/rboundi/mdreader) (<kbd>⌥</kbd><kbd>⌘</kbd><kbd>P</kbd>)
+- Weekly check for new versions on GitHub (can be turned off)
 
 ## Install
 
@@ -133,7 +122,7 @@ This installs the app to `/Applications` and links the `neutrino` command into `
 
 ## Privacy
 
-Neutrino connects to `raw.githubusercontent.com` to list and download syntaxes and themes when you open **Settings → Syntaxes** or **Settings → Appearance**, or install one, and to `github.com` to check for new versions once a week. The update check can be turned off in Settings. There is no analytics or telemetry.
+Neutrino only connects to the internet to download the syntaxes and themes you install, and to check `github.com` for new versions once a week. The update check can be turned off in Settings. There is no analytics or telemetry.
 
 ## Project layout
 
@@ -168,7 +157,7 @@ scripts/                        Icon generator, index builder, release script
 Tests/                          Tests for NeutrinoCore and every syntax and theme file
 ```
 
-The app is AppKit with TextKit 1, with no third-party packages. Colours are applied only to the text on screen, and after an edit only the changed part is scanned again.
+AppKit and TextKit 1, with no third-party packages. Only the text on screen is coloured, and only the edited part is rescanned.
 
 ## Development
 
