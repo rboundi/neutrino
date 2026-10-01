@@ -320,6 +320,59 @@ final class EditorTextView: NSTextView {
         replay { _ in super.doCommand(by: selector) }
     }
 
+    /// Pastes with the block's indentation changed to that of the line the caret is on.
+    @objc func pasteAndIndent(_ sender: Any?) {
+        guard let pasted = NSPasteboard.general.string(forType: .string) else { return NSSound.beep() }
+        let selection = selectedRange()
+        let line = text.lineRange(for: NSRange(location: selection.location, length: 0))
+        var end = line.location
+        while end < NSMaxRange(line), let c = character(at: end), c == " " || c == "\t" { end += 1 }
+        let indent = text.substring(with: NSRange(location: line.location, length: end - line.location))
+        insertText(PasteIndent.reindent(TextCodec.normalized(pasted), to: indent), replacementRange: selection)
+    }
+
+    /// With nothing selected, Copy takes the whole line.
+    override func copy(_ sender: Any?) {
+        guard selectedRange().length == 0, cursors.isEmpty, text.length > 0 else { return super.copy(sender) }
+        let line = text.lineRange(for: selectedRange())
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(text.substring(with: line), forType: .string)
+    }
+
+    /// With nothing selected, Cut takes the whole line.
+    override func cut(_ sender: Any?) {
+        guard selectedRange().length == 0, cursors.isEmpty, text.length > 0, isEditable else { return super.cut(sender) }
+        let line = text.lineRange(for: selectedRange())
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(text.substring(with: line), forType: .string)
+        replace(line, with: "")
+    }
+
+    /// Control-Option-arrow moves by a part of a name: `camel|Case`, `snake|_case`. With Shift
+    /// it selects.
+    override func keyDown(with event: NSEvent) {
+        let flags = event.modifierFlags.intersection([.command, .option, .control, .shift])
+        if flags.subtracting(.shift) == [.control, .option], let key = event.specialKey,
+            key == .leftArrow || key == .rightArrow {
+            return moveBySubWord(forward: key == .rightArrow, extend: flags.contains(.shift))
+        }
+        super.keyDown(with: event)
+    }
+
+    private func moveBySubWord(forward: Bool, extend: Bool) {
+        let selection = selectedRange()
+        var range: NSRange
+        if forward {
+            let end = SubWord.next(in: text, from: NSMaxRange(selection))
+            range = extend ? NSRange(location: selection.location, length: end - selection.location) : NSRange(location: end, length: 0)
+        } else {
+            let start = SubWord.previous(in: text, from: selection.location)
+            range = extend ? NSRange(location: start, length: NSMaxRange(selection) - start) : NSRange(location: start, length: 0)
+        }
+        setSelectedRange(range)
+        scrollRangeToVisible(NSRange(location: forward ? NSMaxRange(range) : range.location, length: 0))
+    }
+
     override func paste(_ sender: Any?) {
         guard cursors.count > 1, let pasted = NSPasteboard.general.string(forType: .string) else {
             return super.paste(sender)
@@ -367,6 +420,28 @@ final class EditorTextView: NSTextView {
         guard found.location != NSNotFound, !all.contains(found) else { return NSSound.beep() }
         setCursors(all + [found])
         scrollRangeToVisible(found)
+    }
+
+    /// Puts a cursor on every place the selected text occurs, or the word at the caret.
+    @objc func selectAllOccurrences(_ sender: Any?) {
+        var selection = selectedRange()
+        let wholeWords = selection.length == 0
+        if wholeWords { selection = selectionRange(forProposedRange: selection, granularity: .selectByWord) }
+        guard selection.length > 0 else { return NSSound.beep() }
+        let needle = text.substring(with: selection)
+        var found: [NSRange] = []
+        var search = NSRange(location: 0, length: text.length)
+        // One more than the limit, so going over it is noticed and reported.
+        while found.count <= Self.cursorLimit {
+            let hit = text.range(of: needle, options: .literal, range: search)
+            guard hit.location != NSNotFound else { break }
+            // From a bare caret only whole words count, as with Select Next Occurrence.
+            if !wholeWords || selectionRange(forProposedRange: NSRange(location: hit.location, length: 0), granularity: .selectByWord) == hit {
+                found.append(hit)
+            }
+            search = NSRange(location: NSMaxRange(hit), length: text.length - NSMaxRange(hit))
+        }
+        setCursors(found)
     }
 
     @objc func addCursorBelow(_ sender: Any?) { addCursor(below: true) }
@@ -768,6 +843,16 @@ final class EditorTextView: NSTextView {
         transformLines(wholeDocument: true) { $0.reversed() }
     }
 
+    @objc func trimTrailingSpaces(_ sender: Any?) {
+        transformLines(wholeDocument: true) { lines in
+            lines.map { line in
+                var line = line
+                while line.last == " " || line.last == "\t" { line.removeLast() }
+                return line
+            }
+        }
+    }
+
     @objc func deleteBlankLines(_ sender: Any?) {
         transformLines(wholeDocument: true) { $0.filter { !$0.trimmingCharacters(in: .whitespaces).isEmpty } }
     }
@@ -913,6 +998,8 @@ final class EditorTextView: NSTextView {
     @objc func jsonUnescape(_ sender: Any?) { transformText(TextTransform.jsonUnescape) }
     @objc func htmlEncode(_ sender: Any?) { transformText(TextTransform.htmlEncode) }
     @objc func htmlDecode(_ sender: Any?) { transformText(TextTransform.htmlDecode) }
+    @objc func zapGremlins(_ sender: Any?) { transformText(Gremlins.zap) }
+    @objc func straightenQuotes(_ sender: Any?) { transformText(Gremlins.straightenQuotes) }
 
     @objc func indentationToSpaces(_ sender: Any?) {
         let width = style.tabWidth
@@ -976,6 +1063,9 @@ final class EditorTextView: NSTextView {
         case #selector(toggleComment(_:)): return lineComment != nil || blockComment != nil
         case #selector(markdownBold(_:)), #selector(markdownItalic(_:)): return isMarkdown && isEditable
         case #selector(insertNumbers(_:)): return cursors.count > 1
+        // With nothing selected these take the line, so they are on whenever there is text.
+        case #selector(copy(_:)): return text.length > 0
+        case #selector(cut(_:)): return text.length > 0 && isEditable
         default: break
         }
         return super.validateMenuItem(menuItem)

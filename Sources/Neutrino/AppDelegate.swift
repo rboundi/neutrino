@@ -86,13 +86,54 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         window.tabGroup?.selectedWindow = tabs[index]
     }
 
+    /// The tabs of the front window, and which of them is in front.
+    private var tabs: (all: [NSWindow], front: Int)? {
+        guard let window = NSApp.keyWindow ?? NSApp.mainWindow, let all = window.tabGroup?.windows,
+            let front = all.firstIndex(of: window)
+        else { return nil }
+        return (all, front)
+    }
+
+    /// Each tab asks about its own unsaved changes, as when it is closed by hand.
+    @objc func closeOtherTabs(_ sender: Any?) {
+        guard let tabs else { return }
+        for (index, window) in tabs.all.enumerated() where index != tabs.front { window.performClose(sender) }
+    }
+
+    @objc func closeTabsToTheRight(_ sender: Any?) {
+        guard let tabs else { return }
+        for window in tabs.all[(tabs.front + 1)...] { window.performClose(sender) }
+    }
+
+    /// Saves every changed document that has a file. Ones never saved are left for Save.
+    @objc func saveAll(_ sender: Any?) {
+        for document in NSDocumentController.shared.documents where document.isDocumentEdited && document.fileURL != nil {
+            document.save(sender)
+        }
+    }
+
+    func applicationDockMenu(_ sender: NSApplication) -> NSMenu? {
+        let menu = NSMenu()
+        menu.addItem(withTitle: "New Document", action: #selector(NSDocumentController.newDocument(_:)), keyEquivalent: "")
+        menu.addItem(withTitle: "Open…", action: #selector(NSDocumentController.openDocument(_:)), keyEquivalent: "")
+        return menu
+    }
+
     @objc func openRepository(_ sender: Any?) {
         if let url = URL(string: "https://github.com/\(UpdateChecker.repo)") { NSWorkspace.shared.open(url) }
     }
 
     func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
-        if menuItem.action == #selector(toggleSetting(_:)), let key = menuItem.representedObject as? String {
-            menuItem.state = UserDefaults.standard.bool(forKey: key) ? .on : .off
+        switch menuItem.action {
+        case #selector(toggleSetting(_:)):
+            if let key = menuItem.representedObject as? String {
+                menuItem.state = UserDefaults.standard.bool(forKey: key) ? .on : .off
+            }
+        case #selector(closeOtherTabs(_:)): return (tabs?.all.count ?? 0) > 1
+        case #selector(closeTabsToTheRight(_:)): return tabs.map { $0.front < $0.all.count - 1 } ?? false
+        case #selector(saveAll(_:)):
+            return NSDocumentController.shared.documents.contains { $0.isDocumentEdited && $0.fileURL != nil }
+        default: break
         }
         return true
     }

@@ -326,3 +326,100 @@ public enum TextTransform {
         return output.joined(separator: "\n")
     }
 }
+
+/// Characters that are easy to paste in by accident and hard to see.
+public enum Gremlins {
+    /// Removes zero-width and control characters and turns the various non-breaking and
+    /// odd-width spaces into ordinary ones. Line breaks and tabs stay.
+    public static func zap(_ text: String) -> String {
+        var output = String.UnicodeScalarView()
+        for scalar in text.unicodeScalars {
+            switch scalar.value {
+            case 0x0A, 0x09: output.append(scalar)
+            case 0x00...0x1F, 0x7F...0x9F: continue
+            case 0x200B...0x200D, 0x2060, 0xFEFF, 0x00AD: continue
+            case 0x00A0, 0x2000...0x200A, 0x202F, 0x205F, 0x3000: output.append(" ")
+            case 0x2028, 0x2029: output.append("\n")
+            default: output.append(scalar)
+            }
+        }
+        return String(output)
+    }
+
+    /// Curly quotes as the straight ones code needs.
+    public static func straightenQuotes(_ text: String) -> String {
+        var output = String.UnicodeScalarView()
+        for scalar in text.unicodeScalars {
+            switch scalar.value {
+            case 0x2018, 0x2019, 0x201A, 0x2032: output.append("'")
+            case 0x201C, 0x201D, 0x201E, 0x2033: output.append("\"")
+            default: output.append(scalar)
+            }
+        }
+        return String(output)
+    }
+}
+
+/// Where the parts of a name such as `camelCase`, `HTTPServer` or `snake_case` begin and end.
+public enum SubWord {
+    private enum Kind { case lower, upper, other }
+
+    private static func kind(_ c: unichar) -> Kind {
+        guard let scalar = Unicode.Scalar(c) else { return .lower }  // half of a surrogate pair
+        if scalar.properties.isUppercase { return .upper }
+        if scalar.properties.isAlphabetic || scalar.properties.numericType != nil { return .lower }
+        return .other
+    }
+
+    /// The end of the part that starts at or after `index`.
+    public static func next(in string: NSString, from index: Int) -> Int {
+        let length = string.length
+        var i = min(max(index, 0), length)
+        while i < length, kind(string.character(at: i)) == .other { i += 1 }
+        let start = i
+        while i < length, kind(string.character(at: i)) == .upper { i += 1 }
+        let capitals = i - start
+        if i < length, kind(string.character(at: i)) == .lower {
+            // In "HTTPServer" the last capital belongs to "Server".
+            if capitals > 1 { return i - 1 }
+            while i < length, kind(string.character(at: i)) == .lower { i += 1 }
+        }
+        return i
+    }
+
+    /// The start of the part that ends at or before `index`.
+    public static func previous(in string: NSString, from index: Int) -> Int {
+        var i = min(max(index, 0), string.length)
+        while i > 0, kind(string.character(at: i - 1)) == .other { i -= 1 }
+        let end = i
+        while i > 0, kind(string.character(at: i - 1)) == .lower { i -= 1 }
+        if i < end {
+            // The capital that starts "Server".
+            if i > 0, kind(string.character(at: i - 1)) == .upper { i -= 1 }
+            return i
+        }
+        while i > 0, kind(string.character(at: i - 1)) == .upper { i -= 1 }
+        return i
+    }
+}
+
+/// Indentation of a block of text that is pasted somewhere else.
+public enum PasteIndent {
+    /// The lines with the indentation they share taken off and `indent` put in its place.
+    /// The first line gets none: it goes in at the caret.
+    public static func reindent(_ text: String, to indent: String) -> String {
+        let lines = text.components(separatedBy: "\n")
+        func lead(_ line: String) -> Int { line.prefix { $0 == " " || $0 == "\t" }.count }
+        let filled = lines.dropFirst().filter { !$0.trimmingCharacters(in: .whitespaces).isEmpty }
+        // The first line's own indentation counts only when it was copied with it.
+        let firstLead = lines.first.map(lead) ?? 0
+        let common = (filled.map(lead) + (firstLead > 0 ? [firstLead] : [])).min() ?? 0
+        return lines.enumerated().map { index, line -> String in
+            // Blank lines carry no indentation.
+            if line.trimmingCharacters(in: .whitespaces).isEmpty { return "" }
+            let body = String(line.dropFirst(min(common, lead(line))))
+            return index == 0 ? String(line.dropFirst(lead(line))) : indent + body
+        }.joined(separator: "\n")
+    }
+}
+

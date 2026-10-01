@@ -15,6 +15,8 @@ final class Document: NSDocument, NSTextStorageDelegate {
     private(set) var editorConfig = EditorConfig()
     /// How the text itself is indented, worked out when it is read. Nil if it can't be told.
     private var detectedIndentation: EditorConfig?
+    /// Indentation picked for this document from the status bar; it wins over everything else.
+    private var chosenIndentation = EditorConfig()
     private(set) var lineIndex = LineIndex()
     private(set) var encoding: String.Encoding = .utf8
     private(set) var hasBOM = false
@@ -46,7 +48,14 @@ final class Document: NSDocument, NSTextStorageDelegate {
         if let detectedIndentation, UserDefaults.standard.bool(forKey: Prefs.detectIndentation) {
             style = style.applying(detectedIndentation)
         }
-        return style.applying(editorConfig)
+        return style.applying(editorConfig).applying(chosenIndentation)
+    }
+
+    /// Sets how this document is indented, until it is closed.
+    func setIndentation(spaces: Bool? = nil, width: Int? = nil) {
+        if let spaces { chosenIndentation.indentWithSpaces = spaces }
+        if let width { chosenIndentation.indentWidth = width }
+        NotificationCenter.default.post(name: Self.formatDidChange, object: self)
     }
 
     /// The text as a string that is safe to read on another thread.

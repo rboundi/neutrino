@@ -16,7 +16,9 @@
 - Native macOS tabs: drag to reorder or out to a new window
 - Line numbers, line wrapping, current line highlight, invisible characters
 - Auto-indent, and auto-closing brackets and quotes
-- Spaces or tabs, any tab width
+- Copy and Cut take the whole line when nothing is selected; Paste and Match Indentation
+- <kbd>⌃</kbd><kbd>⌥</kbd><kbd>←</kbd> / <kbd>⌃</kbd><kbd>⌥</kbd><kbd>→</kbd> move by the parts of a name such as `camelCase`
+- Spaces or tabs, any tab width; change it for one document from the status bar
 - Uses the indentation a file already has
 - Matching bracket highlight, <kbd>⇧</kbd><kbd>⌘</kbd><kbd>M</kbd> to jump to it
 - Other occurrences of the selected word are marked
@@ -28,16 +30,16 @@
 - Text size buttons in the status bar; click the line and column to count lines, words and characters and to see the Unicode name of the character at the caret
 
 **Cursors and lines**
-- Select the next occurrence with <kbd>⌘</kbd><kbd>D</kbd>
+- Select the next occurrence with <kbd>⌘</kbd><kbd>D</kbd>, or all of them with <kbd>⌃</kbd><kbd>⌘</kbd><kbd>G</kbd>
 - Add a cursor above or below with <kbd>⌥</kbd><kbd>⌘</kbd><kbd>↑</kbd> / <kbd>⌥</kbd><kbd>⌘</kbd><kbd>↓</kbd>, or anywhere with <kbd>⌘</kbd>-click
 - Column selection with <kbd>⌥</kbd>-drag
 - Insert Numbers types 1, 2, 3… at the cursors; <kbd>⌃</kbd><kbd>⌥</kbd><kbd>↑</kbd> / <kbd>⌃</kbd><kbd>⌥</kbd><kbd>↓</kbd> adds or subtracts one from the number at each
 - Expand Selection (<kbd>⌃</kbd><kbd>⇧</kbd><kbd>↑</kbd>): the word, then inside the quotes or brackets, then the line
-- Move, duplicate, delete, join, sort and reverse lines, sort by number, remove duplicates and blank lines
+- Move, duplicate, delete, join, sort and reverse lines, sort by number, remove duplicates and blank lines, trim trailing spaces
 - Align lines on a character, and rewrap a paragraph at the page guide (<kbd>⌃</kbd><kbd>Q</kbd>)
 - Shift left and right, comment and uncomment, change case
 - Filter the selection through a shell command such as `sort -u` or `jq .` (<kbd>⌥</kbd><kbd>⌘</kbd><kbd>R</kbd>)
-- Transform: pretty-print or minify JSON, Base64 and URL encode and decode, JSON string escapes, HTML entities, indentation to spaces or tabs, SHA-256
+- Transform: pretty-print or minify JSON, Base64 and URL encode and decode, JSON string escapes, HTML entities, indentation to spaces or tabs, Zap Gremlins (invisible characters), Straighten Quotes, SHA-256
 - Insert the date, the date and time, or a UUID
 
 **Find and replace**
@@ -67,6 +69,7 @@
 - Printing keeps the syntax colours
 - Compare with Saved shows a diff against the file on disk; Compare with Tab and Compare with Clipboard against another open document or the clipboard
 - New from Clipboard, Reveal in Finder, Copy Path, Open Terminal Here
+- Save All, Duplicate, Rename, Move To, Close Other Tabs, Close Tabs to the Right
 - Two tabs with the same file name show their folders
 - `.editorconfig` support
 - Optional trailing-space removal and final line break on save
@@ -127,7 +130,10 @@ This installs the app to `/Applications` and links the `neutrino` command into `
 | Use Selection for Find | <kbd>⌘</kbd><kbd>E</kbd> |
 | Go to Line / Symbol | <kbd>⌘</kbd><kbd>L</kbd> / <kbd>⇧</kbd><kbd>⌘</kbd><kbd>O</kbd> |
 | Go to matching bracket | <kbd>⇧</kbd><kbd>⌘</kbd><kbd>M</kbd> |
-| Select next occurrence | <kbd>⌘</kbd><kbd>D</kbd> |
+| Select next occurrence / all occurrences | <kbd>⌘</kbd><kbd>D</kbd> / <kbd>⌃</kbd><kbd>⌘</kbd><kbd>G</kbd> |
+| Move by part of a name | <kbd>⌃</kbd><kbd>⌥</kbd><kbd>←</kbd> / <kbd>⌃</kbd><kbd>⌥</kbd><kbd>→</kbd> |
+| Paste and match indentation | <kbd>⌥</kbd><kbd>⇧</kbd><kbd>⌘</kbd><kbd>V</kbd> |
+| Close other tabs / Save All | <kbd>⌥</kbd><kbd>⌘</kbd><kbd>W</kbd> / <kbd>⌥</kbd><kbd>⌘</kbd><kbd>S</kbd> |
 | Add cursor above / below | <kbd>⌥</kbd><kbd>⌘</kbd><kbd>↑</kbd> / <kbd>⌥</kbd><kbd>⌘</kbd><kbd>↓</kbd> |
 | Split selection into lines | <kbd>⇧</kbd><kbd>⌘</kbd><kbd>L</kbd> |
 | Move line up / down | <kbd>⌃</kbd><kbd>⌘</kbd><kbd>↑</kbd> / <kbd>⌃</kbd><kbd>⌘</kbd><kbd>↓</kbd> |

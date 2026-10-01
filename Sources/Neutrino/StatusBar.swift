@@ -12,6 +12,7 @@ final class StatusBar: NSView, NSMenuDelegate {
     private let symbols = StatusBar.popup()
     private var symbolList: [Symbol] = []
     private let syntax = StatusBar.popup()
+    private let indent = StatusBar.popup()
     private let lineEnding = StatusBar.popup()
     private let encoding = StatusBar.popup()
 
@@ -25,6 +26,7 @@ final class StatusBar: NSView, NSMenuDelegate {
         position.translatesAutoresizingMaskIntoConstraints = false
         position.toolTip = "Click to count the lines, words and characters in the document"
         syntax.toolTip = "Syntax"
+        indent.toolTip = "Indentation of this document"
         lineEnding.toolTip = "Line endings"
         encoding.toolTip = "Encoding"
 
@@ -40,13 +42,13 @@ final class StatusBar: NSView, NSMenuDelegate {
         size.orientation = .horizontal
         size.spacing = 1
 
-        let popups = NSStackView(views: [lock, size, symbols, syntax, lineEnding, encoding])
+        let popups = NSStackView(views: [lock, size, symbols, syntax, indent, lineEnding, encoding])
         popups.setCustomSpacing(6, after: lock)
         popups.setCustomSpacing(10, after: size)
         popups.orientation = .horizontal
         popups.spacing = 4
         popups.translatesAutoresizingMaskIntoConstraints = false
-        for popup in [symbols, syntax, lineEnding, encoding] {
+        for popup in [symbols, syntax, indent, lineEnding, encoding] {
             popup.menu?.delegate = self
         }
 
@@ -140,6 +142,10 @@ final class StatusBar: NSView, NSMenuDelegate {
         syntax.item(at: 0)?.title = document.syntax?.definition.name ?? "Plain Text"
         symbols.isHidden = document.syntax?.definition.symbols?.isEmpty ?? true
 
+        let style = document.style
+        // A syntax that needs tabs, such as Makefile, overrides the setting.
+        let tabs = !style.insertSpaces || document.syntax?.definition.indentWithTabs == true
+        indent.item(at: 0)?.title = "\(tabs ? "Tabs" : "Spaces"): \(style.tabWidth)"
         lineEnding.item(at: 0)?.title = document.lineEnding.label
         encoding.item(at: 0)?.title = TextCodec.name(of: document.encoding)
     }
@@ -190,6 +196,17 @@ final class StatusBar: NSView, NSMenuDelegate {
                 add("Install \(suggestion.name) Syntax", #selector(installSyntax(_:)), suggestion.id)
             }
             add("More Syntaxes…", #selector(showSyntaxSettings), nil)
+        } else if menu === indent.menu {
+            let style = document.style
+            add("Indent with Spaces", #selector(pickIndentStyle(_:)), true, on: style.insertSpaces)
+            add("Indent with Tabs", #selector(pickIndentStyle(_:)), false, on: !style.insertSpaces)
+            menu.addItem(.separator())
+            for width in [2, 3, 4, 8] {
+                add("Width: \(width)", #selector(pickIndentWidth(_:)), width, on: style.tabWidth == width)
+            }
+            menu.addItem(.separator())
+            add("Convert Indentation to Spaces", #selector(convertIndentation(_:)), true)
+            add("Convert Indentation to Tabs", #selector(convertIndentation(_:)), false)
         } else if menu === lineEnding.menu {
             for ending in LineEnding.allCases {
                 let names = [LineEnding.lf: "LF (macOS, Unix)", .crlf: "CRLF (Windows)", .cr: "CR (Classic Mac OS)"]
@@ -223,6 +240,22 @@ final class StatusBar: NSView, NSMenuDelegate {
 
     @objc private func pickSyntax(_ sender: NSMenuItem) {
         editor?.doc?.setSyntax(id: sender.representedObject as? String)
+    }
+
+    @objc private func pickIndentStyle(_ sender: NSMenuItem) {
+        editor?.doc?.setIndentation(spaces: sender.representedObject as? Bool)
+    }
+
+    @objc private func pickIndentWidth(_ sender: NSMenuItem) {
+        editor?.doc?.setIndentation(width: sender.representedObject as? Int)
+    }
+
+    @objc private func convertIndentation(_ sender: NSMenuItem) {
+        if sender.representedObject as? Bool == true {
+            editor?.textView.indentationToSpaces(nil)
+        } else {
+            editor?.textView.indentationToTabs(nil)
+        }
     }
 
     @objc private func installSyntax(_ sender: NSMenuItem) {

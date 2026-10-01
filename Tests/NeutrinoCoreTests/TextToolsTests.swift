@@ -104,4 +104,35 @@ final class TextToolsTests: XCTestCase {
             """)
         XCTAssertEqual(TextTransform.reflow("a\nb\n\nc", width: 80), "a b\n\nc")
     }
+
+    func testGremlins() {
+        XCTAssertEqual(Gremlins.zap("a\u{200B}b\u{A0}c\u{FEFF}\td\n\u{07}e\u{2028}f"), "ab c\td\ne\nf")
+        XCTAssertEqual(Gremlins.straightenQuotes("\u{201C}it\u{2019}s\u{201D}"), "\"it's\"")
+    }
+
+    func testSubWords() {
+        let text = "let myHTTPServer_name2 = x" as NSString
+        var stops: [Int] = []
+        var position = 4
+        while position < 21 {
+            position = SubWord.next(in: text, from: position)
+            stops.append(position)
+        }
+        XCTAssertEqual(stops, [6, 10, 16, 22])  // my|HTTP|Server|_name2
+        var back: [Int] = []
+        position = 22
+        while position > 4 {
+            position = SubWord.previous(in: text, from: position)
+            back.append(position)
+        }
+        XCTAssertEqual(back, [17, 10, 6, 4])
+        XCTAssertEqual(SubWord.next(in: text, from: 26), 26)
+        XCTAssertEqual(SubWord.previous(in: text, from: 0), 0)
+    }
+
+    func testPasteIndent() {
+        XCTAssertEqual(PasteIndent.reindent("    if x {\n        y()\n\n    }", to: "\t"), "if x {\n\t    y()\n\n\t}")
+        XCTAssertEqual(PasteIndent.reindent("a()\n    b()\n    c()", to: "  "), "a()\n  b()\n  c()")
+        XCTAssertEqual(PasteIndent.reindent("one", to: "    "), "one")
+    }
 }
