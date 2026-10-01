@@ -6,6 +6,7 @@ import NeutrinoCore
 final class EditorTextView: NSTextView {
     var style = EditorStyle.current {
         didSet {
+            if style.scrollPastEnd != oldValue.scrollPastEnd { sizeToFit() }
             guard style.pageGuide != oldValue.pageGuide || style.font != oldValue.font
                 || style.indentGuides != oldValue.indentGuides || style.tabWidth != oldValue.tabWidth
             else { return }
@@ -70,6 +71,17 @@ final class EditorTextView: NSTextView {
         guard shouldChangeText(in: range, replacementString: string) else { return }
         textStorage?.replaceCharacters(in: range, with: string)
         didChangeText()
+    }
+
+    /// With "Scroll past the end" on, the view is half a window taller than its text, so the
+    /// last line can be brought up to the middle.
+    override func setFrameSize(_ newSize: NSSize) {
+        var size = newSize
+        if style.scrollPastEnd, let layoutManager, let textContainer, let scroll = enclosingScrollView {
+            let content = layoutManager.usedRect(for: textContainer).height + 2 * textContainerInset.height
+            size.height = max(size.height, content + (scroll.contentSize.height / 2).rounded())
+        }
+        super.setFrameSize(size)
     }
 
     // MARK: Typing
@@ -381,6 +393,142 @@ final class EditorTextView: NSTextView {
         scrollRangeToVisible(caret)
     }
 
+    // MARK: Expanding the selection
+
+    /// Each step of Expand Selection, so Shrink Selection can go back through them.
+    private var expansions: [(from: NSRange, to: NSRange)] = []
+
+    private static func isOpener(_ c: unichar) -> Bool { c == 0x28 || c == 0x5B || c == 0x7B }
+    private static func isCloser(_ c: unichar) -> Bool { c == 0x29 || c == 0x5D || c == 0x7D }
+
+    /// The nearest pair of brackets around `range`, skipping those in strings and comments.
+    private func enclosingBrackets(of range: NSRange) -> (open: Int, close: Int)? {
+        let limit = 200_000
+        var depth = 0
+        var open: Int?
+        var index = range.location - 1
+        while index >= 0, range.location - index < limit {
+            let c = text.character(at: index)
+            if Self.isCloser(c), isCode(index) {
+                depth += 1
+            } else if Self.isOpener(c), isCode(index) {
+                if depth == 0 {
+                    open = index
+                    break
+                }
+                depth -= 1
+            }
+            index -= 1
+        }
+        guard let open else { return nil }
+        depth = 0
+        index = NSMaxRange(range)
+        while index < text.length, index - NSMaxRange(range) < limit {
+            let c = text.character(at: index)
+            if Self.isOpener(c), isCode(index) {
+                depth += 1
+            } else if Self.isCloser(c), isCode(index) {
+                if depth == 0 { return (open, index) }
+                depth -= 1
+            }
+            index += 1
+        }
+        return nil
+    }
+
+    /// The nearest pair of the same quote character around `range`, on its line.
+    private func enclosingQuotes(of range: NSRange) -> (open: Int, close: Int)? {
+        let line = text.lineRange(for: NSRange(location: range.location, length: 0))
+        guard NSMaxRange(range) <= NSMaxRange(line) else { return nil }
+        var best: (open: Int, close: Int)?
+        for quote: unichar in [0x22, 0x27, 0x60] {
+            var open = range.location - 1
+            while open >= line.location, text.character(at: open) != quote { open -= 1 }
+            var close = NSMaxRange(range)
+            while close < NSMaxRange(line), text.character(at: close) != quote { close += 1 }
+            guard open >= line.location, close < NSMaxRange(line) else { continue }
+            if best == nil || close - open < best!.close - best!.open { best = (open, close) }
+        }
+        return best
+    }
+
+    /// Grows the selection to the next larger thing around it: the word, what is inside the
+    /// nearest quotes or brackets, those with their quotes or brackets, the line, everything.
+    @objc func expandSelection(_ sender: Any?) {
+        let selection = selectedRange()
+        if let last = expansions.last, last.to != selection { expansions = [] }
+        var candidates = [selectionRange(forProposedRange: selection, granularity: .selectByWord)]
+        for pair in [enclosingBrackets(of: selection), enclosingQuotes(of: selection)] {
+            guard let pair else { continue }
+            candidates.append(NSRange(location: pair.open + 1, length: pair.close - pair.open - 1))
+            candidates.append(NSRange(location: pair.open, length: pair.close - pair.open + 1))
+        }
+        let lines = text.lineRange(for: selection)
+        var content = lines
+        if content.length > 0, text.character(at: NSMaxRange(content) - 1) == 0x0A { content.length -= 1 }
+        candidates += [content, lines, NSRange(location: 0, length: text.length)]
+        let larger = candidates.filter {
+            $0.location <= selection.location && NSMaxRange($0) >= NSMaxRange(selection) && $0.length > selection.length
+        }
+        guard let next = larger.min(by: { $0.length < $1.length }) else { return NSSound.beep() }
+        expansions.append((selection, next))
+        setSelectedRange(next)
+    }
+
+    /// Goes back one step of Expand Selection.
+    @objc func shrinkSelection(_ sender: Any?) {
+        guard let last = expansions.last, last.to == selectedRange() else {
+            expansions = []
+            return NSSound.beep()
+        }
+        expansions.removeLast()
+        setSelectedRange(last.from)
+    }
+
+    // MARK: Numbers
+
+    @objc func increaseNumber(_ sender: Any?) { changeNumbers(by: 1) }
+    @objc func decreaseNumber(_ sender: Any?) { changeNumbers(by: -1) }
+
+    /// Adds `step` to the whole number at the caret, or at each cursor.
+    private func changeNumbers(by step: Int) {
+        var changed = false
+        if cursors.count > 1 {
+            replay { _ in changed = self.changeNumber(by: step) || changed }
+        } else {
+            changed = changeNumber(by: step)
+        }
+        if !changed { NSSound.beep() }
+    }
+
+    private func changeNumber(by step: Int) -> Bool {
+        let selection = selectedRange()
+        func isDigit(_ index: Int) -> Bool { (0x30...0x39).contains(text.character(at: index)) }
+        var start = selection.location
+        var end = NSMaxRange(selection)
+        while start > 0, isDigit(start - 1) { start -= 1 }
+        while end < text.length, isDigit(end) { end += 1 }
+        let digits = text.substring(with: NSRange(location: start, length: end - start))
+        guard !digits.isEmpty, digits.count <= 18, let value = Int(digits) else { return false }
+        // A minus counts as a sign unless it follows something it could be subtracting from.
+        var negative = false
+        if start > 0, text.character(at: start - 1) == 0x2D {
+            let before = start > 1 ? character(at: start - 2) : nil
+            negative = before == nil || !(before!.isLetter || before!.isNumber || before == ")" || before == "]")
+        }
+        let result = (negative ? -value : value) + step
+        var number = String(abs(result))
+        // Keep the width of a number written with leading zeros.
+        if digits.hasPrefix("0"), digits.count > 1, number.count < digits.count {
+            number = String(repeating: "0", count: digits.count - number.count) + number
+        }
+        if result < 0 { number = "-" + number }
+        let whole = NSRange(location: start - (negative ? 1 : 0), length: end - start + (negative ? 1 : 0))
+        replace(whole, with: number)
+        setSelectedRange(NSRange(location: whole.location + (number as NSString).length, length: 0))
+        return true
+    }
+
     /// Types 1, 2, 3… at the cursors, in order.
     @objc func insertNumbers(_ sender: Any?) {
         guard cursors.count > 1 else { return NSSound.beep() }
@@ -612,6 +760,48 @@ final class EditorTextView: NSTextView {
         }
     }
 
+    @objc func sortLinesByNumber(_ sender: Any?) {
+        transformLines(wholeDocument: true, TextTransform.sortedByNumber)
+    }
+
+    @objc func reverseLines(_ sender: Any?) {
+        transformLines(wholeDocument: true) { $0.reversed() }
+    }
+
+    @objc func deleteBlankLines(_ sender: Any?) {
+        transformLines(wholeDocument: true) { $0.filter { !$0.trimmingCharacters(in: .whitespaces).isEmpty } }
+    }
+
+    /// Lines up the selected lines on the first `marker` in each.
+    func alignLines(at marker: String) {
+        transformLines { TextTransform.align($0, at: marker) }
+    }
+
+    /// Wraps the selected lines again, or the paragraph the caret is in, at the page guide
+    /// (column 80 without one).
+    @objc func rewrapParagraph(_ sender: Any?) {
+        let width = style.pageGuide > 0 ? style.pageGuide : 80
+        if selectedRange().length == 0 {
+            func isBlank(_ range: NSRange) -> Bool {
+                text.substring(with: range).trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            }
+            var block = text.lineRange(for: selectedRange())
+            guard !isBlank(block) else { return NSSound.beep() }
+            while block.location > 0 {
+                let previous = text.lineRange(for: NSRange(location: block.location - 1, length: 0))
+                if isBlank(previous) { break }
+                block = NSUnionRange(previous, block)
+            }
+            while NSMaxRange(block) < text.length {
+                let next = text.lineRange(for: NSRange(location: NSMaxRange(block), length: 0))
+                if isBlank(next) || next.length == 0 { break }
+                block = NSUnionRange(block, next)
+            }
+            setSelectedRange(block)
+        }
+        transformLines { TextTransform.reflow($0.joined(separator: "\n"), width: width).components(separatedBy: "\n") }
+    }
+
     @objc func shiftRight(_ sender: Any?) {
         let unit = indentUnit
         transformLines { $0.map { $0.isEmpty ? $0 : unit + $0 } }
@@ -719,6 +909,10 @@ final class EditorTextView: NSTextView {
     @objc func base64Decode(_ sender: Any?) { transformText(TextTransform.base64Decode) }
     @objc func urlEncode(_ sender: Any?) { transformText(TextTransform.urlEncode) }
     @objc func urlDecode(_ sender: Any?) { transformText(TextTransform.urlDecode) }
+    @objc func jsonEscape(_ sender: Any?) { transformText(TextTransform.jsonEscape) }
+    @objc func jsonUnescape(_ sender: Any?) { transformText(TextTransform.jsonUnescape) }
+    @objc func htmlEncode(_ sender: Any?) { transformText(TextTransform.htmlEncode) }
+    @objc func htmlDecode(_ sender: Any?) { transformText(TextTransform.htmlDecode) }
 
     @objc func indentationToSpaces(_ sender: Any?) {
         let width = style.tabWidth
@@ -926,6 +1120,8 @@ final class EditorLayoutManager: NSLayoutManager {
 final class GutterView: NSView {
     weak var textView: EditorTextView?
     var lineIndex: () -> LineIndex = { LineIndex() }
+    /// The lines that have a bookmark, counted from 0.
+    var bookmarks: () -> Set<Int> = { [] }
     var font = NSFont.monospacedDigitSystemFont(ofSize: 11, weight: .regular) {
         didSet { digitWidth = nil }
     }
@@ -957,7 +1153,12 @@ final class GutterView: NSView {
         let normal: [NSAttributedString.Key: Any] = [.font: font, .foregroundColor: Theme.gutterText]
         let current: [NSAttributedString.Key: Any] = [.font: font, .foregroundColor: NSColor.labelColor]
 
+        let marked = bookmarks()
         func drawNumber(_ line: Int, at rect: NSRect) {
+            if marked.contains(line) {
+                NSColor.controlAccentColor.setFill()
+                NSBezierPath(ovalIn: NSRect(x: 2, y: rect.midY + offset - 2.5, width: 5, height: 5)).fill()
+            }
             let label = String(line + 1) as NSString
             let attributes = line == currentLine ? current : normal
             let size = label.size(withAttributes: attributes)

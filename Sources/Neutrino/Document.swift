@@ -365,6 +365,35 @@ final class Document: NSDocument, NSTextStorageDelegate {
             title: "\(name) and \(otherName)", same: "The two documents have the same text.")
     }
 
+    /// Opens a new document with the differences between this document and the clipboard.
+    @objc func compareWithClipboard(_ sender: Any?) {
+        guard let copied = NSPasteboard.general.string(forType: .string) else { return NSSound.beep() }
+        let name = displayName ?? "Untitled"
+        compare(
+            old: textStorage.string, named: name, new: TextCodec.normalized(copied), named: "Clipboard",
+            title: "\(name) and the clipboard", same: "The clipboard has the same text as the document.")
+    }
+
+    // MARK: The file
+
+    @objc func revealInFinder(_ sender: Any?) {
+        if let fileURL { NSWorkspace.shared.activateFileViewerSelecting([fileURL]) }
+    }
+
+    @objc func copyPath(_ sender: Any?) {
+        guard let fileURL else { return }
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(fileURL.path, forType: .string)
+    }
+
+    /// Opens a Terminal window in the file's folder.
+    @objc func openTerminalHere(_ sender: Any?) {
+        guard let folder = fileURL?.deletingLastPathComponent(),
+            let terminal = NSWorkspace.shared.urlForApplication(withBundleIdentifier: "com.apple.Terminal")
+        else { return NSSound.beep() }
+        NSWorkspace.shared.open([folder], withApplicationAt: terminal, configuration: NSWorkspace.OpenConfiguration())
+    }
+
     /// Whether the text is short enough to compare without a long wait.
     var isComparable: Bool { textStorage.length < 20 << 20 }
 
@@ -400,6 +429,9 @@ final class Document: NSDocument, NSTextStorageDelegate {
     override func validateUserInterfaceItem(_ item: NSValidatedUserInterfaceItem) -> Bool {
         switch item.action {
         case #selector(compareWithSaved(_:)): return fileURL != nil && isComparable
+        case #selector(compareWithClipboard(_:)): return isComparable
+        case #selector(revealInFinder(_:)), #selector(copyPath(_:)), #selector(openTerminalHere(_:)):
+            return fileURL != nil
         case #selector(previewInMDReader(_:)): return isMarkdown && fileURL != nil
         default: return super.validateUserInterfaceItem(item)
         }
@@ -566,6 +598,32 @@ final class DocumentController: NSDocumentController {
             textView.replace(whole, with: text)
             textView.setSelectedRange(NSRange(location: 0, length: 0))
         }
+    }
+
+    /// A new document holding the text on the clipboard.
+    @objc func newFromClipboard(_ sender: Any?) {
+        guard let copied = NSPasteboard.general.string(forType: .string),
+            let document = try? openUntitledDocumentAndDisplay(true) as? Document
+        else { return NSSound.beep() }
+        document.editor?.textView.replace(NSRange(location: 0, length: 0), with: TextCodec.normalized(copied))
+        document.editor?.textView.setSelectedRange(NSRange(location: 0, length: 0))
+    }
+
+    /// Opening or closing a document can give two tabs the same name, or end that.
+    private func refreshTitles() {
+        for case let document as Document in documents {
+            document.editor?.synchronizeWindowTitleWithDocumentName()
+        }
+    }
+
+    override func addDocument(_ document: NSDocument) {
+        super.addDocument(document)
+        refreshTitles()
+    }
+
+    override func removeDocument(_ document: NSDocument) {
+        super.removeDocument(document)
+        refreshTitles()
     }
 
     @objc func reopenClosedTab(_ sender: Any?) {

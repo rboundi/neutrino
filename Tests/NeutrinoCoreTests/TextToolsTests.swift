@@ -68,4 +68,40 @@ final class TextToolsTests: XCTestCase {
         XCTAssertEqual(TextTransform.urlEncode("a b&c=d/é"), "a%20b%26c%3Dd%2F%C3%A9")
         XCTAssertEqual(TextTransform.urlDecode("a%20b%26c"), "a b&c")
     }
+
+    func testJSONStringEscapes() {
+        XCTAssertEqual(TextTransform.jsonEscape("a \"b\"\n\tc/d\\"), #"a \"b\"\n\tc/d\\"#)
+        XCTAssertEqual(TextTransform.jsonUnescape(#"a \"b\"\n\tc\u00e9"#), "a \"b\"\n\tcé")
+        XCTAssertEqual(TextTransform.jsonUnescape(#""quoted \\ text""#), "quoted \\ text")
+        XCTAssertNil(TextTransform.jsonUnescape(#"bad \q escape"#))
+    }
+
+    func testHTMLEntities() {
+        XCTAssertEqual(TextTransform.htmlEncode("<a href=\"x\">Tom & 'Jerry'</a>"), "&lt;a href=&quot;x&quot;&gt;Tom &amp; &#39;Jerry&#39;&lt;/a&gt;")
+        XCTAssertEqual(TextTransform.htmlDecode("&lt;b&gt; &amp;amp; &#39;&#x41;&#66;&nbsp;&unknown; &"), "<b> &amp; 'AB\u{A0}&unknown; &")
+    }
+
+    func testSortByNumber() {
+        XCTAssertEqual(TextTransform.sortedByNumber(["b 10", "none", "a 9.5", "c -2", "also none", "d 10"]),
+                       ["c -2", "a 9.5", "b 10", "d 10", "none", "also none"])
+    }
+
+    func testAlign() {
+        XCTAssertEqual(TextTransform.align(["a = 1", "long   = 2", "none", "xy=3"], at: "="),
+                       ["a    = 1", "long = 2", "none", "xy   =3"])
+    }
+
+    func testReflow() {
+        let text = "// one two three four five six seven\n// eight nine\n\n    plain words that are long enough to wrap around the edge"
+        XCTAssertEqual(TextTransform.reflow(text, width: 24), """
+            // one two three four
+            // five six seven eight
+            // nine
+
+                plain words that are
+                long enough to wrap
+                around the edge
+            """)
+        XCTAssertEqual(TextTransform.reflow("a\nb\n\nc", width: 80), "a b\n\nc")
+    }
 }

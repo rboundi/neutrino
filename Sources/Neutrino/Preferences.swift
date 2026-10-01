@@ -39,6 +39,8 @@ enum Prefs {
     static let indentGuides = "indentGuides"
     static let markTrailingSpaces = "markTrailingSpaces"
     static let showColours = "showColours"
+    static let scrollPastEnd = "scrollPastEnd"
+    static let alignText = "alignText"
     /// Where the caret was in recently closed files, oldest first, as "location\tpath".
     static let positions = "positions"
     /// The macOS setting that keeps an app's windows, and the unsaved text in them, across a quit.
@@ -76,6 +78,7 @@ enum Prefs {
             indentGuides: false,
             markTrailingSpaces: false,
             showColours: false,
+            scrollPastEnd: false,
             checkForUpdates: true,
         ])
     }
@@ -142,6 +145,7 @@ struct EditorStyle: Equatable {
     var markTrailingSpaces: Bool
     /// Whether hex colours such as #3E8087 are underlined in their own colour.
     var showColours: Bool
+    var scrollPastEnd: Bool
     /// The installed theme in use; empty for the built-in colours.
     var theme: String
 
@@ -163,6 +167,7 @@ struct EditorStyle: Equatable {
             indentGuides: defaults.bool(forKey: Prefs.indentGuides),
             markTrailingSpaces: defaults.bool(forKey: Prefs.markTrailingSpaces),
             showColours: defaults.bool(forKey: Prefs.showColours),
+            scrollPastEnd: defaults.bool(forKey: Prefs.scrollPastEnd),
             theme: defaults.string(forKey: Prefs.theme) ?? "")
     }
 

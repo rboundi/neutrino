@@ -22,7 +22,7 @@
 - Other occurrences of the selected word are marked
 - Word completion from the document (<kbd>⌥</kbd><kbd>Esc</kbd>)
 - Split editor: two views of the same document, with a divider you can drag (<kbd>⌘</kbd><kbd>\</kbd>)
-- Optional page guide, indent guides, marks on trailing spaces, hex colours underlined in their colour, spell checking
+- Optional scrolling past the end, page guide, indent guides, marks on trailing spaces, hex colours underlined in their colour, spell checking
 - Read-only lock in the status bar; a file that can't be written opens locked
 - In Markdown, Return continues a list, and <kbd>⌘</kbd><kbd>B</kbd> / <kbd>⌘</kbd><kbd>I</kbd> make the selection bold or italic
 - Text size buttons in the status bar; click the line and column to count lines, words and characters and to see the Unicode name of the character at the caret
@@ -31,11 +31,13 @@
 - Select the next occurrence with <kbd>⌘</kbd><kbd>D</kbd>
 - Add a cursor above or below with <kbd>⌥</kbd><kbd>⌘</kbd><kbd>↑</kbd> / <kbd>⌥</kbd><kbd>⌘</kbd><kbd>↓</kbd>, or anywhere with <kbd>⌘</kbd>-click
 - Column selection with <kbd>⌥</kbd>-drag
-- Insert Numbers types 1, 2, 3… at the cursors
-- Move, duplicate, delete, join and sort lines, remove duplicates
+- Insert Numbers types 1, 2, 3… at the cursors; <kbd>⌃</kbd><kbd>⌥</kbd><kbd>↑</kbd> / <kbd>⌃</kbd><kbd>⌥</kbd><kbd>↓</kbd> adds or subtracts one from the number at each
+- Expand Selection (<kbd>⌃</kbd><kbd>⇧</kbd><kbd>↑</kbd>): the word, then inside the quotes or brackets, then the line
+- Move, duplicate, delete, join, sort and reverse lines, sort by number, remove duplicates and blank lines
+- Align lines on a character, and rewrap a paragraph at the page guide (<kbd>⌃</kbd><kbd>Q</kbd>)
 - Shift left and right, comment and uncomment, change case
 - Filter the selection through a shell command such as `sort -u` or `jq .` (<kbd>⌥</kbd><kbd>⌘</kbd><kbd>R</kbd>)
-- Transform: pretty-print or minify JSON, Base64 and URL encode and decode, indentation to spaces or tabs
+- Transform: pretty-print or minify JSON, Base64 and URL encode and decode, JSON string escapes, HTML entities, indentation to spaces or tabs, SHA-256
 - Insert the date, the date and time, or a UUID
 
 **Find and replace**
@@ -54,6 +56,7 @@
 - A reopened file starts where the caret was
 - Open Quickly (<kbd>⌥</kbd><kbd>⌘</kbd><kbd>O</kbd>): type part of a name to jump to a tab or a recent file
 - Go to Last Edit (<kbd>⌃</kbd><kbd>-</kbd>), and back through earlier edits
+- Bookmarks: <kbd>⌘</kbd><kbd>F2</kbd> marks a line, <kbd>F2</kbd> and <kbd>⇧</kbd><kbd>F2</kbd> jump between marks
 - Open the path or link at the caret (<kbd>⌃</kbd><kbd>⌘</kbd><kbd>O</kbd>), including `file:line`
 
 **Files**
@@ -62,7 +65,9 @@
 - Encoding, byte order mark and line endings are preserved; change them from the status bar
 - Live reload when a file changes on disk; with the caret on the last line it follows the end, like `tail -f`
 - Printing keeps the syntax colours
-- Compare with Saved shows a diff against the file on disk; Compare with Tab against another open document
+- Compare with Saved shows a diff against the file on disk; Compare with Tab and Compare with Clipboard against another open document or the clipboard
+- New from Clipboard, Reveal in Finder, Copy Path, Open Terminal Here
+- Two tabs with the same file name show their folders
 - `.editorconfig` support
 - Optional trailing-space removal and final line break on save
 - Quitting never asks to save: windows and unsaved text come back at the next launch. Only closing a tab asks
@@ -79,6 +84,7 @@
 
 **Other**
 - `neutrino` command: `neutrino main.c`, `neutrino main.c:42` or `git diff | neutrino`
+- Open in Neutrino in the Services menu, for files selected in Finder
 - Preview Markdown in [MDReader](https://github.com/rboundi/mdreader) (<kbd>⌥</kbd><kbd>⌘</kbd><kbd>P</kbd>)
 - Weekly check for new versions on GitHub (can be turned off)
 
@@ -133,6 +139,12 @@ This installs the app to `/Applications` and links the `neutrino` command into `
 | Open Quickly | <kbd>⌥</kbd><kbd>⌘</kbd><kbd>O</kbd> |
 | Open path or link at caret | <kbd>⌃</kbd><kbd>⌘</kbd><kbd>O</kbd> |
 | Go to last edit | <kbd>⌃</kbd><kbd>-</kbd> |
+| Toggle / next / previous bookmark | <kbd>⌘</kbd><kbd>F2</kbd> / <kbd>F2</kbd> / <kbd>⇧</kbd><kbd>F2</kbd> |
+| Expand / shrink selection | <kbd>⌃</kbd><kbd>⇧</kbd><kbd>↑</kbd> / <kbd>⌃</kbd><kbd>⇧</kbd><kbd>↓</kbd> |
+| Increase / decrease number | <kbd>⌃</kbd><kbd>⌥</kbd><kbd>↑</kbd> / <kbd>⌃</kbd><kbd>⌥</kbd><kbd>↓</kbd> |
+| Rewrap paragraph | <kbd>⌃</kbd><kbd>Q</kbd> |
+| New from Clipboard | <kbd>⇧</kbd><kbd>⌘</kbd><kbd>N</kbd> |
+| Reveal in Finder / Copy Path | <kbd>⇧</kbd><kbd>⌘</kbd><kbd>R</kbd> / <kbd>⌃</kbd><kbd>⌘</kbd><kbd>C</kbd> |
 | Bold / italic in Markdown | <kbd>⌘</kbd><kbd>B</kbd> / <kbd>⌘</kbd><kbd>I</kbd> |
 | Split editor | <kbd>⌘</kbd><kbd>\</kbd> |
 | Preview in MDReader | <kbd>⌥</kbd><kbd>⌘</kbd><kbd>P</kbd> |

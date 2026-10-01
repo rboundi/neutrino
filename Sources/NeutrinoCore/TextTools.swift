@@ -178,4 +178,151 @@ public enum TextTransform {
     public static func urlDecode(_ text: String) -> String? {
         text.removingPercentEncoding
     }
+
+    /// The text as it would be written inside a JSON string, without the quotes around it.
+    public static func jsonEscape(_ text: String) -> String? {
+        guard let data = try? JSONSerialization.data(withJSONObject: text, options: [.fragmentsAllowed, .withoutEscapingSlashes]),
+            let quoted = String(data: data, encoding: .utf8), quoted.count >= 2
+        else { return nil }
+        return String(quoted.dropFirst().dropLast())
+    }
+
+    /// The text a JSON string stands for. The quotes around it may be left out.
+    public static func jsonUnescape(_ text: String) -> String? {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        let quoted = trimmed.count >= 2 && trimmed.hasPrefix("\"") && trimmed.hasSuffix("\"") ? trimmed : "\"" + text + "\""
+        // A line break is not allowed inside a JSON string; taking it as one is what is meant.
+        let oneLine = quoted.replacingOccurrences(of: "\n", with: "\\n").replacingOccurrences(of: "\t", with: "\\t")
+        guard let data = oneLine.data(using: .utf8) else { return nil }
+        return try? JSONSerialization.jsonObject(with: data, options: [.fragmentsAllowed]) as? String
+    }
+
+    public static func htmlEncode(_ text: String) -> String {
+        var output = ""
+        for character in text {
+            switch character {
+            case "&": output += "&amp;"
+            case "<": output += "&lt;"
+            case ">": output += "&gt;"
+            case "\"": output += "&quot;"
+            case "'": output += "&#39;"
+            default: output.append(character)
+            }
+        }
+        return output
+    }
+
+    private static let entities: [String: String] = [
+        "amp": "&", "lt": "<", "gt": ">", "quot": "\"", "apos": "'", "nbsp": "\u{A0}", "copy": "©", "reg": "®",
+        "hellip": "…", "mdash": "—", "ndash": "–", "laquo": "«", "raquo": "»", "euro": "€",
+    ]
+
+    /// Turns `&amp;`, `&#39;`, `&#x27;` and a few other named entities back into characters.
+    /// Anything it doesn't know is left as it is.
+    public static func htmlDecode(_ text: String) -> String {
+        guard let regex = try? NSRegularExpression(pattern: "&(#[0-9]{1,7}|#[xX][0-9a-fA-F]{1,6}|[a-zA-Z]{2,8});") else { return text }
+        let source = text as NSString
+        var output = ""
+        var position = 0
+        for match in regex.matches(in: text, range: NSRange(location: 0, length: source.length)) {
+            let name = source.substring(with: match.range(at: 1))
+            var replacement: String?
+            if name.hasPrefix("#") {
+                let digits = name.dropFirst()
+                let value = digits.hasPrefix("x") || digits.hasPrefix("X")
+                    ? UInt32(digits.dropFirst(), radix: 16) : UInt32(digits, radix: 10)
+                replacement = value.flatMap(Unicode.Scalar.init).map { String(Character($0)) }
+            } else {
+                replacement = entities[name]
+            }
+            guard let replacement else { continue }
+            output += source.substring(with: NSRange(location: position, length: match.range.location - position))
+            output += replacement
+            position = NSMaxRange(match.range)
+        }
+        return output + source.substring(from: position)
+    }
+
+    /// The first number in a line, for sorting lines by number. Nil when it has none.
+    public static func leadingNumber(in line: String) -> Double? {
+        guard let range = line.range(of: "-?[0-9]+(\\.[0-9]+)?", options: .regularExpression) else { return nil }
+        return Double(line[range])
+    }
+
+    /// Lines sorted by the first number in each; lines without a number keep their order at the end.
+    public static func sortedByNumber(_ lines: [String]) -> [String] {
+        let keyed = lines.enumerated().map { (index: $0.offset, line: $0.element, number: leadingNumber(in: $0.element)) }
+        return keyed.sorted { a, b in
+            switch (a.number, b.number) {
+            case let (x?, y?): return x != y ? x < y : a.index < b.index
+            case (_?, nil): return true
+            case (nil, _?): return false
+            case (nil, nil): return a.index < b.index
+            }
+        }.map(\.line)
+    }
+
+    /// Lines padded with spaces so the first `marker` in each sits in the same column.
+    /// Lines without it are left alone.
+    public static func align(_ lines: [String], at marker: String) -> [String] {
+        guard !marker.isEmpty else { return lines }
+        let parts = lines.map { line -> (head: String, tail: String)? in
+            guard let range = line.range(of: marker) else { return nil }
+            var head = String(line[..<range.lowerBound])
+            while head.last == " " || head.last == "\t" { head.removeLast() }
+            return (head, String(line[range.lowerBound...]))
+        }
+        let column = parts.compactMap { $0?.head.count }.max() ?? 0
+        return zip(lines, parts).map { line, part in
+            guard let part else { return line }
+            return part.head + String(repeating: " ", count: column - part.head.count + 1) + part.tail
+        }
+    }
+
+    /// Wraps each paragraph again so no line is longer than `width`. Paragraphs are separated by
+    /// blank lines. The indentation and comment marker of a paragraph's first line (`//`, `#`,
+    /// `*`, `>`, `--`, `;`) are kept in front of every line of it.
+    public static func reflow(_ text: String, width: Int) -> String {
+        var output: [String] = []
+        var paragraph: [String] = []
+        func flush() {
+            guard let first = paragraph.first else { return }
+            let prefix = first.range(of: "^[ \\t]*(?:(?://+|#+|\\*|>+|--|;+)[ \\t]*)?", options: .regularExpression)
+                .map { String(first[$0]) } ?? ""
+            let marker = prefix.trimmingCharacters(in: .whitespaces)
+            var words: [Substring] = []
+            for line in paragraph {
+                var body = line[...]
+                if body.hasPrefix(prefix) {
+                    body = body.dropFirst(prefix.count)
+                } else {
+                    // A line with less space after the marker, or none of it.
+                    body = body.drop { $0 == " " || $0 == "\t" }
+                    if !marker.isEmpty, body.hasPrefix(marker) { body = body.dropFirst(marker.count) }
+                }
+                words += body.split(whereSeparator: { $0 == " " || $0 == "\t" })
+            }
+            let room = max(width - prefix.count, 20)
+            var line = ""
+            for word in words {
+                if !line.isEmpty, line.count + 1 + word.count > room {
+                    output.append(prefix + line)
+                    line = ""
+                }
+                line += (line.isEmpty ? "" : " ") + word
+            }
+            output.append(line.isEmpty ? String(prefix.reversed().drop { $0 == " " || $0 == "\t" }.reversed()) : prefix + line)
+            paragraph = []
+        }
+        for line in text.components(separatedBy: "\n") {
+            if line.trimmingCharacters(in: .whitespaces).isEmpty {
+                flush()
+                output.append(line)
+            } else {
+                paragraph.append(line)
+            }
+        }
+        flush()
+        return output.joined(separator: "\n")
+    }
 }

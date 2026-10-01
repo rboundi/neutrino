@@ -29,6 +29,7 @@ enum MainMenu {
         // File
         let file = submenu("File", in: main)
         add(file, "New", #selector(NSDocumentController.newDocument(_:)), "n")
+        add(file, "New from Clipboard", #selector(DocumentController.newFromClipboard(_:)), "n", [.command, .shift])
         add(file, "Open…", #selector(NSDocumentController.openDocument(_:)), "o")
         add(file, "Open Quickly…", #selector(AppDelegate.openQuickly(_:)), "o", [.command, .option], target: delegate)
         add(file, "Open Path or Link at Caret", #selector(EditorWindowController.openPathAtCaret(_:)), "o", [.command, .control])
@@ -45,6 +46,11 @@ enum MainMenu {
         compare.identifier = compareMenu
         compare.delegate = delegate
         file.addItem(withTitle: "Compare with Tab", action: nil, keyEquivalent: "").submenu = compare
+        add(file, "Compare with Clipboard", #selector(Document.compareWithClipboard(_:)))
+        file.addItem(.separator())
+        add(file, "Reveal in Finder", #selector(Document.revealInFinder(_:)), "r", [.command, .shift])
+        add(file, "Copy Path", #selector(Document.copyPath(_:)), "c", [.command, .control])
+        add(file, "Open Terminal Here", #selector(Document.openTerminalHere(_:)))
         file.addItem(.separator())
         add(file, "Preview in MDReader", #selector(Document.previewInMDReader(_:)), "p", [.command, .option])
         file.addItem(.separator())
@@ -60,6 +66,8 @@ enum MainMenu {
         add(edit, "Paste", #selector(NSText.paste(_:)), "v")
         add(edit, "Delete", #selector(NSText.delete(_:)))
         add(edit, "Select All", #selector(NSText.selectAll(_:)), "a")
+        add(edit, "Expand Selection", #selector(EditorTextView.expandSelection(_:)), String(UnicodeScalar(NSUpArrowFunctionKey)!), [.control, .shift])
+        add(edit, "Shrink Selection", #selector(EditorTextView.shrinkSelection(_:)), String(UnicodeScalar(NSDownArrowFunctionKey)!), [.control, .shift])
         edit.addItem(.separator())
         let find = NSMenu()
         edit.addItem(withTitle: "Find", action: nil, keyEquivalent: "").submenu = find
@@ -71,6 +79,12 @@ enum MainMenu {
         add(edit, "Go to Line…", #selector(EditorWindowController.goToLine(_:)), "l")
         add(edit, "Go to Symbol…", #selector(EditorWindowController.showSymbols(_:)), "o", [.command, .shift])
         add(edit, "Go to Last Edit", #selector(EditorWindowController.goToLastEdit(_:)), "-", [.control])
+        let marks = NSMenu()
+        edit.addItem(withTitle: "Bookmarks", action: nil, keyEquivalent: "").submenu = marks
+        add(marks, "Toggle Bookmark", #selector(EditorWindowController.toggleBookmark(_:)), String(UnicodeScalar(NSF2FunctionKey)!))
+        add(marks, "Next Bookmark", #selector(EditorWindowController.nextBookmark(_:)), String(UnicodeScalar(NSF2FunctionKey)!), [])
+        add(marks, "Previous Bookmark", #selector(EditorWindowController.previousBookmark(_:)), String(UnicodeScalar(NSF2FunctionKey)!), [.shift])
+        add(marks, "Clear Bookmarks", #selector(EditorWindowController.clearBookmarks(_:)))
         add(edit, "Go to Matching Bracket", #selector(EditorTextView.goToMatchingBracket(_:)), "m", [.command, .shift])
         edit.addItem(.separator())
 
@@ -80,6 +94,8 @@ enum MainMenu {
         add(cursors, "Add Cursor Above", #selector(EditorTextView.addCursorAbove(_:)), String(UnicodeScalar(NSUpArrowFunctionKey)!), [.command, .option])
         add(cursors, "Add Cursor Below", #selector(EditorTextView.addCursorBelow(_:)), String(UnicodeScalar(NSDownArrowFunctionKey)!), [.command, .option])
         add(cursors, "Insert Numbers", #selector(EditorTextView.insertNumbers(_:)))
+        add(cursors, "Increase Number", #selector(EditorTextView.increaseNumber(_:)), String(UnicodeScalar(NSUpArrowFunctionKey)!), [.control, .option])
+        add(cursors, "Decrease Number", #selector(EditorTextView.decreaseNumber(_:)), String(UnicodeScalar(NSDownArrowFunctionKey)!), [.control, .option])
         add(cursors, "Split Selection into Lines", #selector(EditorTextView.splitSelectionIntoLines(_:)), "l", [.command, .shift])
 
         let lines = NSMenu()
@@ -95,7 +111,13 @@ enum MainMenu {
         add(lines, "Join", #selector(EditorTextView.joinLines(_:)), "j", [.command])
         lines.addItem(.separator())
         add(lines, "Sort", #selector(EditorTextView.sortLines(_:)))
+        add(lines, "Sort by Number", #selector(EditorTextView.sortLinesByNumber(_:)))
+        add(lines, "Reverse", #selector(EditorTextView.reverseLines(_:)))
         add(lines, "Remove Duplicates", #selector(EditorTextView.removeDuplicateLines(_:)))
+        add(lines, "Delete Blank Lines", #selector(EditorTextView.deleteBlankLines(_:)))
+        lines.addItem(.separator())
+        add(lines, "Align…", #selector(EditorWindowController.alignLines(_:)))
+        add(lines, "Rewrap Paragraph", #selector(EditorTextView.rewrapParagraph(_:)), "q", [.control])
 
         let letters = NSMenu()
         edit.addItem(withTitle: "Convert Case", action: nil, keyEquivalent: "").submenu = letters
@@ -112,6 +134,12 @@ enum MainMenu {
         add(transform, "Base64 Decode", #selector(EditorTextView.base64Decode(_:)))
         add(transform, "URL Encode", #selector(EditorTextView.urlEncode(_:)))
         add(transform, "URL Decode", #selector(EditorTextView.urlDecode(_:)))
+        add(transform, "Escape JSON String", #selector(EditorTextView.jsonEscape(_:)))
+        add(transform, "Unescape JSON String", #selector(EditorTextView.jsonUnescape(_:)))
+        add(transform, "Encode HTML Entities", #selector(EditorTextView.htmlEncode(_:)))
+        add(transform, "Decode HTML Entities", #selector(EditorTextView.htmlDecode(_:)))
+        transform.addItem(.separator())
+        add(transform, "Copy SHA-256", #selector(EditorWindowController.copySHA256(_:)))
         transform.addItem(.separator())
         add(transform, "Indentation to Spaces", #selector(EditorTextView.indentationToSpaces(_:)))
         add(transform, "Indentation to Tabs", #selector(EditorTextView.indentationToTabs(_:)))

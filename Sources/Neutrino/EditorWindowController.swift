@@ -109,6 +109,8 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSText
     /// Where the text was edited lately, most recent last, for Go to Last Edit.
     private var editPlaces: [Int] = []
     private var editPlaceIndex: Int?
+    /// Bookmarked lines, each kept as a place in the text so it moves with edits.
+    private var bookmarks: [Int] = []
     private var caretLine = 0
     /// Set once something has put the caret where it should be, such as `neutrino file:42`.
     private var positionWasSet = false
@@ -284,6 +286,7 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSText
         pane.textView.delegate = self
         pane.textView.isCode = { [weak self] index in self?.isCode(at: index) ?? true }
         pane.gutter.lineIndex = { [weak document] in document?.lineIndex ?? LineIndex() }
+        pane.gutter.bookmarks = { [weak self] in self?.bookmarkedLines() ?? [] }
         let center = NotificationCenter.default
         center.addObserver(
             self, selector: #selector(viewportChanged(_:)), name: NSView.boundsDidChangeNotification,
@@ -417,6 +420,8 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSText
         case #selector(toggleSplit(_:)): menuItem.state = panes.count > 1 ? .on : .off
         case #selector(toggleLock(_:)): menuItem.state = isLocked ? .on : .off
         case #selector(goToLastEdit(_:)): return !editPlaces.isEmpty
+        case #selector(nextBookmark(_:)), #selector(previousBookmark(_:)), #selector(clearBookmarks(_:)):
+            return !bookmarks.isEmpty
         default: break
         }
         return true
@@ -719,6 +724,13 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSText
                 editPlaces[i] = newRange.location
             }
         }
+        for i in bookmarks.indices {
+            if bookmarks[i] >= oldEnd {
+                bookmarks[i] += delta
+            } else if bookmarks[i] > newRange.location {
+                bookmarks[i] = newRange.location
+            }
+        }
         let here = NSMaxRange(newRange)
         if let last = editPlaces.last, abs(last - here) < 80 {
             editPlaces[editPlaces.count - 1] = here
@@ -846,6 +858,50 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSText
         textView.setSelectedRange(caret)
         textView.scrollRangeToVisible(caret)
         window?.makeFirstResponder(textView)
+    }
+
+    // MARK: Bookmarks
+
+    private func bookmarkedLines() -> Set<Int> {
+        guard let index = doc?.lineIndex else { return [] }
+        return Set(bookmarks.map { index.line(at: min($0, text.length)) })
+    }
+
+    /// Marks the line the caret is on, or takes its mark away.
+    @objc func toggleBookmark(_ sender: Any?) {
+        guard let index = doc?.lineIndex else { return }
+        let line = index.line(at: textView.selectedRange().location)
+        let before = bookmarks.count
+        bookmarks.removeAll { index.line(at: min($0, text.length)) == line }
+        if bookmarks.count == before { bookmarks.append(index.start(ofLine: line)) }
+        for pane in panes { pane.gutter.needsDisplay = true }
+    }
+
+    @objc func nextBookmark(_ sender: Any?) { goToBookmark(forward: true) }
+    @objc func previousBookmark(_ sender: Any?) { goToBookmark(forward: false) }
+
+    /// The nearest bookmarked line after or before the caret, going round at the ends.
+    private func goToBookmark(forward: Bool) {
+        guard let index = doc?.lineIndex else { return }
+        let lines = bookmarkedLines().sorted()
+        let current = index.line(at: textView.selectedRange().location)
+        let target = forward ? lines.first { $0 > current } ?? lines.first : lines.last { $0 < current } ?? lines.last
+        guard let target else { return NSSound.beep() }
+        go(toLine: target + 1)
+    }
+
+    @objc func clearBookmarks(_ sender: Any?) {
+        bookmarks = []
+        for pane in panes { pane.gutter.needsDisplay = true }
+    }
+
+    // MARK: Title
+
+    /// Two open files with the same name get their folder beside the name, in the tab too.
+    override func windowTitle(forDocumentDisplayName displayName: String) -> String {
+        guard let doc, let folder = doc.fileURL?.deletingLastPathComponent().lastPathComponent else { return displayName }
+        let twin = NSDocumentController.shared.documents.contains { $0 !== doc && $0.displayName == displayName }
+        return twin ? "\(displayName) — \(folder)" : displayName
     }
 
     /// Moves the caret to the end of the text and shows it, for a file that grows on disk.

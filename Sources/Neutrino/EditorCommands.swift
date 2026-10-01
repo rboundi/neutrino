@@ -1,4 +1,5 @@
 import AppKit
+import CryptoKit
 import NeutrinoCore
 
 /// Commands that work on the whole editor window: the shell filter and the symbol menu.
@@ -110,6 +111,40 @@ extension EditorWindowController {
         alert.messageText = title
         alert.informativeText = detail
         alert.beginSheetModal(for: window)
+    }
+
+    // MARK: Align, hash
+
+    /// Asks which text to line the selected lines up on.
+    @objc func alignLines(_ sender: Any?) {
+        guard let window else { return }
+        let alert = NSAlert()
+        alert.messageText = "Align Lines"
+        alert.informativeText = "The selected lines are padded with spaces so the first of this text in each lines up."
+        let field = NSTextField(frame: NSRect(x: 0, y: 0, width: 160, height: 22))
+        field.font = .monospacedSystemFont(ofSize: 12, weight: .regular)
+        field.stringValue = UserDefaults.standard.string(forKey: Prefs.alignText) ?? "="
+        alert.accessoryView = field
+        alert.addButton(withTitle: "Align")
+        alert.addButton(withTitle: "Cancel")
+        alert.window.initialFirstResponder = field
+        alert.beginSheetModal(for: window) { [weak self] response in
+            let marker = field.stringValue
+            guard let self, response == .alertFirstButtonReturn, !marker.isEmpty else { return }
+            UserDefaults.standard.set(marker, forKey: Prefs.alignText)
+            self.textView.alignLines(at: marker)
+        }
+    }
+
+    /// Copies the SHA-256 of the selection, or of the whole text, as it would be saved in UTF-8.
+    @objc func copySHA256(_ sender: Any?) {
+        let selection = textView.selectedRange()
+        let range = selection.length > 0 ? selection : NSRange(location: 0, length: text.length)
+        let digest = SHA256.hash(data: Data(text.substring(with: range).utf8))
+        let hex = digest.map { String(format: "%02x", $0) }.joined()
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(hex, forType: .string)
+        statusBar.setPosition("SHA-256 copied: \(hex.prefix(16))…")
     }
 
     // MARK: Path or link at the caret

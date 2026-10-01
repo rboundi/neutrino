@@ -23,6 +23,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
             self.addOpenRecentIfMissing()
         }
         UpdateChecker.checkIfDue { [weak self] release in self?.offer(release) }
+        NSApp.servicesProvider = self
     }
 
     func applicationDidResignActive(_ notification: Notification) {
@@ -45,6 +46,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
             let appearance = ThemeStore.shared.appearance
             if NSApp.appearance != appearance { NSApp.appearance = appearance }
         }
+    }
+
+    /// The "Open in Neutrino" service, for files selected in Finder and other apps.
+    @objc func openFiles(_ pasteboard: NSPasteboard, userData: String, error: AutoreleasingUnsafeMutablePointer<NSString>) {
+        let urls = pasteboard.readObjects(forClasses: [NSURL.self], options: [.urlReadingFileURLsOnly: true]) as? [URL] ?? []
+        var isFolder: ObjCBool = false
+        for url in urls where FileManager.default.fileExists(atPath: url.path, isDirectory: &isFolder) && !isFolder.boolValue {
+            NSDocumentController.shared.openDocument(withContentsOf: url, display: true) { _, _, _ in }
+        }
+        NSApp.activate(ignoringOtherApps: true)
     }
 
     // MARK: Menu commands
