@@ -5,7 +5,8 @@ import NeutrinoCore
 final class StatusBar: NSView, NSMenuDelegate {
     weak var editor: EditorWindowController?
 
-    private let position = NSTextField(labelWithString: "")
+    /// The line and column, as a button: a click shows the size of the document.
+    private let position = NSButton(title: "", target: nil, action: nil)
     private let sizeLabel = NSTextField(labelWithString: "")
     private lazy var lock = symbolButton("lock.open", "", #selector(toggleLock))
     private let symbols = StatusBar.popup()
@@ -16,11 +17,13 @@ final class StatusBar: NSView, NSMenuDelegate {
 
     override init(frame: NSRect) {
         super.init(frame: frame)
-        position.font = .monospacedDigitSystemFont(ofSize: 11, weight: .regular)
-        position.textColor = .secondaryLabelColor
+        position.isBordered = false
+        position.target = self
+        position.action = #selector(showCounts)
+        position.lineBreakMode = .byTruncatingTail
+        position.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
         position.translatesAutoresizingMaskIntoConstraints = false
         position.toolTip = "Click to count the lines, words and characters in the document"
-        position.addGestureRecognizer(NSClickGestureRecognizer(target: self, action: #selector(showCounts)))
         syntax.toolTip = "Syntax"
         lineEnding.toolTip = "Line endings"
         encoding.toolTip = "Encoding"
@@ -119,7 +122,10 @@ final class StatusBar: NSView, NSMenuDelegate {
     }
 
     func setPosition(_ text: String) {
-        position.stringValue = text
+        position.attributedTitle = NSAttributedString(string: text, attributes: [
+            .font: NSFont.monospacedDigitSystemFont(ofSize: 11, weight: .regular),
+            .foregroundColor: NSColor.secondaryLabelColor,
+        ])
     }
 
     /// Shows the document's current syntax, line endings and encoding.
