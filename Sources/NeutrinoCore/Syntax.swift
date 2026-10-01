@@ -111,6 +111,8 @@ public final class CompiledSyntax {
         .reportProgress, .withTransparentBounds, .withoutAnchoringBounds,
     ]
 
+    private static let space = CharacterSet.whitespacesAndNewlines as NSCharacterSet
+
     public convenience init(data: Data) throws {
         let definition: SyntaxDefinition
         do {
@@ -196,8 +198,10 @@ public final class CompiledSyntax {
         while restart > 0 {
             let line = string.lineRange(for: NSRange(location: restart - 1, length: 0))
             restart = line.location
-            let blank = string.substring(with: line).allSatisfy(\.isWhitespace)
-            if !blank { break }
+            // Checked in place: the line can be megabytes long.
+            var end = line.location
+            while end < NSMaxRange(line), Self.space.characterIsMember(string.character(at: end)) { end += 1 }
+            if end < NSMaxRange(line) { break }
         }
         // A token that reaches across that point has to be rescanned from its own start.
         var keep = Self.firstIndex(in: previous, endingAfter: restart)

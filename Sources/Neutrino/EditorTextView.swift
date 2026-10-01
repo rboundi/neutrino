@@ -702,14 +702,19 @@ final class EditorLayoutManager: NSLayoutManager {
 final class GutterView: NSView {
     weak var textView: EditorTextView?
     var lineIndex: () -> LineIndex = { LineIndex() }
-    var font = NSFont.monospacedDigitSystemFont(ofSize: 11, weight: .regular)
+    var font = NSFont.monospacedDigitSystemFont(ofSize: 11, weight: .regular) {
+        didSet { digitWidth = nil }
+    }
+    /// Width of one digit in `font`, measured once per font.
+    private var digitWidth: CGFloat?
 
     override var isFlipped: Bool { true }
 
     /// Wide enough for the largest line number, with room to grow before it has to change.
     func width(forLineCount count: Int) -> CGFloat {
         let digits = max(3, String(count).count)
-        let digit = ("8" as NSString).size(withAttributes: [.font: font]).width
+        let digit = digitWidth ?? ("8" as NSString).size(withAttributes: [.font: font]).width
+        digitWidth = digit
         return ceil(digit * CGFloat(digits)) + 16
     }
 

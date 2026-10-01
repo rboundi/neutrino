@@ -65,6 +65,8 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSText
     var selectionScope: NSRange?
     var findMessage: String?
     let findGeneration = Generation()
+    /// The search as last compiled, so moving the caret doesn't compile it again.
+    var compiledQuery: (pattern: String, options: SearchOptions, query: SearchQuery?)?
 
     private static let workQueue = DispatchQueue(label: "neutrino.scan", qos: .userInitiated, attributes: .concurrent)
     var workQueue: DispatchQueue { Self.workQueue }

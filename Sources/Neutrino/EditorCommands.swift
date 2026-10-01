@@ -117,8 +117,9 @@ extension EditorWindowController {
     /// Functions, classes and headings in the document, found with the patterns of its syntax.
     /// Matches inside comments and strings are left out.
     func symbols() -> [Symbol] {
-        guard let syntax = doc?.syntax else { return [] }
-        return syntax.symbols(in: text).filter { symbol in
+        guard let doc, let syntax = doc.syntax else { return [] }
+        // A copy, made once: each pattern would otherwise copy the text for itself.
+        return syntax.symbols(in: doc.snapshotText()).filter { symbol in
             let found = Self.firstIndex(in: tokens, endingAfter: symbol.range.location) { $0.range }
             guard found < tokens.count, tokens[found].range.location <= symbol.range.location else { return true }
             switch tokens[found].scope {

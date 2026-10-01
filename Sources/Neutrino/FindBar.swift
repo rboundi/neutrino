@@ -29,8 +29,14 @@ final class FindBar: NSView, NSSearchFieldDelegate {
 
     var pattern: String {
         get { findField.stringValue }
-        set { findField.stringValue = newValue }
+        set {
+            findField.stringValue = newValue
+            reported = newValue
+        }
     }
+    /// The pattern the delegate last heard about. Typing reaches the bar twice, as the field's
+    /// action and as a text change, and one search per key is enough.
+    private var reported = ""
 
     var replacement: String {
         get { replaceField.stringValue }
@@ -196,7 +202,11 @@ final class FindBar: NSView, NSSearchFieldDelegate {
 
     // MARK: Actions
 
-    @objc private func changed() { delegate?.findBarChanged() }
+    @objc private func changed() {
+        guard pattern != reported else { return }
+        reported = pattern
+        delegate?.findBarChanged()
+    }
     @objc private func scopeChanged() { delegate?.findBarScopeChanged() }
     @objc private func findAll() { delegate?.findBarFindAll() }
     @objc private func close() { delegate?.findBarClose() }
@@ -215,7 +225,7 @@ final class FindBar: NSView, NSSearchFieldDelegate {
     }
 
     func controlTextDidChange(_ notification: Notification) {
-        if notification.object as? NSSearchField === findField { delegate?.findBarChanged() }
+        if notification.object as? NSSearchField === findField { changed() }
     }
 
     func control(_ control: NSControl, textView: NSTextView, doCommandBy selector: Selector) -> Bool {

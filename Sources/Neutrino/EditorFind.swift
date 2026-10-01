@@ -16,7 +16,14 @@ extension EditorWindowController: FindBarDelegate {
     }
 
     private var query: SearchQuery? {
-        try? SearchQuery(pattern: findBar.pattern, options: findBar.options)
+        let pattern = findBar.pattern
+        let options = findBar.options
+        if let compiledQuery, compiledQuery.pattern == pattern, compiledQuery.options == options {
+            return compiledQuery.query
+        }
+        let query = try? SearchQuery(pattern: pattern, options: options)
+        compiledQuery = (pattern, options, query)
+        return query
     }
 
     private var replacement: Replacement {
@@ -101,14 +108,11 @@ extension EditorWindowController: FindBarDelegate {
             }
             return
         }
-        let query: SearchQuery
-        do {
-            query = try SearchQuery(pattern: findBar.pattern, options: findBar.options)
-        } catch {
+        guard let query else {
             matches = []
             matchesAreCurrent = true
             decorateVisible(force: true)
-            return findBar.setStatus(findBar.pattern.isEmpty ? "" : error.localizedDescription, isError: true)
+            return findBar.setStatus(findBar.pattern.isEmpty ? "" : "Invalid regular expression", isError: true)
         }
         let range = searchRange
         after(text.length > Self.debounceLimit ? 0.25 : 0) { [weak self] in
@@ -190,7 +194,10 @@ extension EditorWindowController: FindBarDelegate {
         let selection = textView.selectedRange()
         var target: NSRange?
         if backwards {
-            target = matches.last { NSMaxRange($0) <= selection.location && $0 != selection }
+            // The last match that ends at or before the caret.
+            var index = Self.firstIndex(in: matches, endingAfter: selection.location) { $0 } - 1
+            if index >= 0, matches[index] == selection { index -= 1 }
+            target = index >= 0 ? matches[index] : nil
         } else {
             let index = Self.firstIndex(in: matches, endingAfter: NSMaxRange(selection) - 1) { $0 }
             target = matches[index...].first { $0.location >= NSMaxRange(selection) && $0 != selection }

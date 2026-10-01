@@ -29,7 +29,6 @@ final class StatusBar: NSView, NSMenuDelegate {
         let smaller = sizeButton("minus", "Smaller text", -1)
         let larger = sizeButton("plus", "Larger text", 1)
         sizeLabel.font = .monospacedDigitSystemFont(ofSize: 11, weight: .regular)
-        sizeLabel.textColor = .secondaryLabelColor
         sizeLabel.toolTip = "Text size. It is used for every document from now on."
         let size = NSStackView(views: [smaller, sizeLabel, larger])
         size.orientation = .horizontal
@@ -82,7 +81,8 @@ final class StatusBar: NSView, NSMenuDelegate {
             .withSymbolConfiguration(NSImage.SymbolConfiguration(pointSize: 9, weight: .semibold)) ?? NSImage()
         let button = NSButton(image: image, target: self, action: #selector(changeSize(_:)))
         button.isBordered = false
-        button.contentTintColor = .secondaryLabelColor
+        // The same colour as the menus beside it; a grey symbol reads as switched off.
+        button.contentTintColor = .labelColor
         button.tag = step
         button.toolTip = label
         button.setAccessibilityLabel(label)

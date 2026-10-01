@@ -52,10 +52,12 @@ public struct LineIndex {
     }
 
     private static func appendLineStarts(in string: NSString, range: NSRange, to starts: inout [Int]) {
-        let chunk = 1 << 16
+        let end = NSMaxRange(range)
+        guard end > range.location else { return }
+        // No larger than the range: this runs for every key typed.
+        let chunk = min(1 << 16, range.length)
         var buffer = [unichar](repeating: 0, count: chunk)
         var position = range.location
-        let end = NSMaxRange(range)
         while position < end {
             let length = min(chunk, end - position)
             string.getCharacters(&buffer, range: NSRange(location: position, length: length))
