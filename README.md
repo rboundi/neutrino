@@ -17,8 +17,13 @@
 - Line numbers, line wrapping, current line highlight, invisible characters
 - Auto-indent, and auto-closing brackets and quotes
 - Spaces or tabs, any tab width
+- Uses the indentation a file already has
 - Matching bracket highlight, <kbd>⇧</kbd><kbd>⌘</kbd><kbd>M</kbd> to jump to it
-- Text size buttons in the status bar
+- Other occurrences of the selected word are marked
+- Word completion from the document (<kbd>⌥</kbd><kbd>Esc</kbd>)
+- Split editor: two views of the same document (<kbd>⌘</kbd><kbd>\</kbd>)
+- Optional page guide and spell checking
+- Text size buttons in the status bar; click the line and column to count lines, words and characters
 
 **Cursors and lines**
 - Select the next occurrence with <kbd>⌘</kbd><kbd>D</kbd>
@@ -27,6 +32,8 @@
 - Move, duplicate, delete, join and sort lines, remove duplicates
 - Shift left and right, comment and uncomment, change case
 - Filter the selection through a shell command such as `sort -u` or `jq .` (<kbd>⌥</kbd><kbd>⌘</kbd><kbd>R</kbd>)
+- Transform: pretty-print or minify JSON, Base64 and URL encode and decode, indentation to spaces or tabs
+- Insert the date, the date and time, or a UUID
 
 **Find and replace**
 - Plain text or regex, match case, whole words
@@ -41,13 +48,14 @@
 - Go to Line (<kbd>⌘</kbd><kbd>L</kbd>), also `line:column`
 - Go to Symbol (<kbd>⇧</kbd><kbd>⌘</kbd><kbd>O</kbd>): functions, classes, headings
 - <kbd>⌘</kbd><kbd>1</kbd>…<kbd>⌘</kbd><kbd>9</kbd> to switch tabs, <kbd>⇧</kbd><kbd>⌘</kbd><kbd>T</kbd> to reopen a closed one
+- A reopened file starts where the caret was
 
 **Files**
 - Autosave, with macOS versions. Can be turned off in Settings
 - Unsaved text is recovered after a crash
 - Encoding, byte order mark and line endings are preserved; change them from the status bar
 - Live reload when a file changes on disk
-- Compare with Saved shows a diff against the file on disk
+- Compare with Saved shows a diff against the file on disk; Compare with Tab against another open document
 - `.editorconfig` support
 - Optional trailing-space removal and final line break on save
 - Quitting never asks to save: windows and unsaved text come back at the next launch. Only closing a tab asks
@@ -114,6 +122,8 @@ This installs the app to `/Applications` and links the `neutrino` command into `
 | Shift left / right | <kbd>⌘</kbd><kbd>[</kbd> / <kbd>⌘</kbd><kbd>]</kbd> |
 | Comment or uncomment | <kbd>⌘</kbd><kbd>/</kbd> |
 | Filter Through Command | <kbd>⌥</kbd><kbd>⌘</kbd><kbd>R</kbd> |
+| Complete word | <kbd>⌥</kbd><kbd>Esc</kbd> |
+| Split editor | <kbd>⌘</kbd><kbd>\</kbd> |
 | Preview in MDReader | <kbd>⌥</kbd><kbd>⌘</kbd><kbd>P</kbd> |
 | Reopen closed tab | <kbd>⇧</kbd><kbd>⌘</kbd><kbd>T</kbd> |
 | Show tab 1–8 / last tab | <kbd>⌘</kbd><kbd>1</kbd>…<kbd>⌘</kbd><kbd>8</kbd> / <kbd>⌘</kbd><kbd>9</kbd> |
@@ -135,11 +145,13 @@ Sources/NeutrinoCore/           No UI, covered by tests
   EditorConfig.swift            Reading .editorconfig files
   UnifiedDiff.swift             Compare with Saved
   ThemeDefinition.swift         Theme files
+  TextTools.swift               Indentation detection, word count, JSON, Base64 and URL transforms
 Sources/Neutrino/
   main.swift, AppDelegate.swift App entry, launch and quit
   MainMenu.swift                Menu bar
   Document.swift                An open file: reading, writing, reloading
   EditorWindowController.swift  Window layout, colours, settings
+  EditorPane.swift              One view of the text with its line numbers; two when split
   EditorFind.swift              Find and replace
   EditorCommands.swift          Shell filter and the symbol menu
   EditorTextView.swift          Text view: cursors, line commands, brackets, invisibles, line numbers

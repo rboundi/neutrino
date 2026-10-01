@@ -2,6 +2,9 @@ import AppKit
 
 /// The menu bar, built in code. Items without a target go to whichever view or window has focus.
 enum MainMenu {
+    /// The menu of other open documents to compare with; the app delegate fills it when it opens.
+    static let compareMenu = NSUserInterfaceItemIdentifier("compare")
+
     static func build(delegate: AppDelegate) -> NSMenu {
         let main = NSMenu()
 
@@ -35,6 +38,10 @@ enum MainMenu {
         add(file, "Save As…", #selector(NSDocument.saveAs(_:)), "s", [.command, .shift])
         add(file, "Revert to Saved", #selector(NSDocument.revertToSaved(_:)))
         add(file, "Compare with Saved", #selector(Document.compareWithSaved(_:)))
+        let compare = NSMenu()
+        compare.identifier = compareMenu
+        compare.delegate = delegate
+        file.addItem(withTitle: "Compare with Tab", action: nil, keyEquivalent: "").submenu = compare
         file.addItem(.separator())
         add(file, "Preview in MDReader", #selector(Document.previewInMDReader(_:)), "p", [.command, .option])
         file.addItem(.separator())
@@ -91,7 +98,30 @@ enum MainMenu {
         add(letters, "Lower Case", #selector(NSResponder.lowercaseWord(_:)))
         add(letters, "Capitalize", #selector(NSResponder.capitalizeWord(_:)))
 
+        let transform = NSMenu()
+        edit.addItem(withTitle: "Transform", action: nil, keyEquivalent: "").submenu = transform
+        add(transform, "Pretty-Print JSON", #selector(EditorTextView.prettyPrintJSON(_:)))
+        add(transform, "Minify JSON", #selector(EditorTextView.minifyJSON(_:)))
+        transform.addItem(.separator())
+        add(transform, "Base64 Encode", #selector(EditorTextView.base64Encode(_:)))
+        add(transform, "Base64 Decode", #selector(EditorTextView.base64Decode(_:)))
+        add(transform, "URL Encode", #selector(EditorTextView.urlEncode(_:)))
+        add(transform, "URL Decode", #selector(EditorTextView.urlDecode(_:)))
+        transform.addItem(.separator())
+        add(transform, "Indentation to Spaces", #selector(EditorTextView.indentationToSpaces(_:)))
+        add(transform, "Indentation to Tabs", #selector(EditorTextView.indentationToTabs(_:)))
+
+        let insert = NSMenu()
+        edit.addItem(withTitle: "Insert", action: nil, keyEquivalent: "").submenu = insert
+        add(insert, "Date", #selector(EditorTextView.insertDate(_:)))
+        add(insert, "Date and Time", #selector(EditorTextView.insertDateAndTime(_:)))
+        add(insert, "UUID", #selector(EditorTextView.insertUUID(_:)))
+
         add(edit, "Filter Through Command…", #selector(EditorWindowController.filterThroughCommand(_:)), "r", [.command, .option])
+        edit.addItem(.separator())
+        add(edit, "Complete Word", #selector(NSTextView.complete(_:)), "\u{1B}", [.option])
+        add(edit, "Check Spelling While Typing", #selector(AppDelegate.toggleSetting(_:)), target: delegate)
+            .representedObject = Prefs.checkSpelling
 
         // View
         let view = submenu("View", in: main)
@@ -102,6 +132,7 @@ enum MainMenu {
             let item = add(view, title, #selector(AppDelegate.toggleSetting(_:)), target: delegate)
             item.representedObject = key
         }
+        add(view, "Split Editor", #selector(EditorWindowController.toggleSplit(_:)), "\\")
         view.addItem(.separator())
         add(view, "Bigger", #selector(AppDelegate.changeFontSize(_:)), "+", target: delegate).tag = 1
         add(view, "Smaller", #selector(AppDelegate.changeFontSize(_:)), "-", target: delegate).tag = -1

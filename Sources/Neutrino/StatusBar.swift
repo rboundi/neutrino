@@ -18,6 +18,8 @@ final class StatusBar: NSView, NSMenuDelegate {
         position.font = .monospacedDigitSystemFont(ofSize: 11, weight: .regular)
         position.textColor = .secondaryLabelColor
         position.translatesAutoresizingMaskIntoConstraints = false
+        position.toolTip = "Click to count the lines, words and characters in the document"
+        position.addGestureRecognizer(NSClickGestureRecognizer(target: self, action: #selector(showCounts)))
         syntax.toolTip = "Syntax"
         lineEnding.toolTip = "Line endings"
         encoding.toolTip = "Encoding"
@@ -92,6 +94,10 @@ final class StatusBar: NSView, NSMenuDelegate {
             button.heightAnchor.constraint(equalToConstant: 22),
         ])
         return button
+    }
+
+    @objc private func showCounts() {
+        editor?.showDocumentCounts()
     }
 
     @objc private func changeSize(_ sender: NSButton) {

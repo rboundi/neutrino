@@ -4,7 +4,15 @@ import NeutrinoCore
 /// The text view: indentation, bracket pairs, multiple cursors, line commands and the
 /// current-line highlight.
 final class EditorTextView: NSTextView {
-    var style = EditorStyle.current
+    var style = EditorStyle.current {
+        didSet {
+            guard style.pageGuide != oldValue.pageGuide || style.font != oldValue.font else { return }
+            columnWidth = nil
+            needsDisplay = true
+        }
+    }
+    /// Width of one character in the editor font, measured when the page guide first needs it.
+    private var columnWidth: CGFloat?
     /// Set by the syntax of the document: comment markers and whether tabs are required.
     var lineComment: String?
     var blockComment: [String]?
@@ -616,6 +624,91 @@ final class EditorTextView: NSTextView {
         }
     }
 
+    // MARK: Completion
+
+    /// Words from the document that start with what is typed, nearest to the caret first.
+    override func completions(
+        forPartialWordRange charRange: NSRange, indexOfSelectedItem index: UnsafeMutablePointer<Int>
+    ) -> [String]? {
+        guard charRange.length > 0, NSMaxRange(charRange) <= text.length else { return [] }
+        let typed = text.substring(with: charRange)
+        guard let regex = try? NSRegularExpression(
+            pattern: "(?<![\\w])" + NSRegularExpression.escapedPattern(for: typed) + "\\w+")
+        else { return [] }
+        // A million characters either side is plenty, and keeps this quick in a huge file.
+        let reach = 1_000_000
+        let start = max(charRange.location - reach, 0)
+        let window = NSRange(location: start, length: min(NSMaxRange(charRange) + reach, text.length) - start)
+        let nearby = text.substring(with: window) as NSString
+        let caret = charRange.location - start
+        var distance: [String: Int] = [:]
+        regex.enumerateMatches(in: nearby as String, range: NSRange(location: 0, length: nearby.length)) { match, _, _ in
+            guard let range = match?.range, range.location != caret else { return }
+            let word = nearby.substring(with: range)
+            distance[word] = min(distance[word] ?? .max, abs(range.location - caret))
+        }
+        return Array(distance.sorted { ($0.value, $0.key) < ($1.value, $1.key) }.prefix(50).map(\.key))
+    }
+
+    // MARK: Transforms
+
+    /// Replaces the selection, or the whole text when nothing is selected, with what `change`
+    /// makes of it. Beeps when `change` can't make anything of it.
+    private func transformText(_ change: (String) -> String?) {
+        let selection = selectedRange()
+        let range = selection.length > 0 ? selection : NSRange(location: 0, length: text.length)
+        let old = text.substring(with: range)
+        guard let new = change(old) else { return NSSound.beep() }
+        guard new != old else { return }
+        replace(range, with: new)
+        if selection.length > 0 {
+            setSelectedRange(NSRange(location: range.location, length: (new as NSString).length))
+        } else {
+            setSelectedRange(NSRange(location: min(selection.location, text.length), length: 0))
+        }
+    }
+
+    @objc func prettyPrintJSON(_ sender: Any?) {
+        let unit = indentUnit
+        transformText { TextTransform.json($0, indent: unit) }
+    }
+
+    @objc func minifyJSON(_ sender: Any?) { transformText { TextTransform.json($0, indent: nil) } }
+    @objc func base64Encode(_ sender: Any?) { transformText(TextTransform.base64Encode) }
+    @objc func base64Decode(_ sender: Any?) { transformText(TextTransform.base64Decode) }
+    @objc func urlEncode(_ sender: Any?) { transformText(TextTransform.urlEncode) }
+    @objc func urlDecode(_ sender: Any?) { transformText(TextTransform.urlDecode) }
+
+    @objc func indentationToSpaces(_ sender: Any?) {
+        let width = style.tabWidth
+        transformText { Indentation.convert($0, toSpaces: true, width: width) }
+    }
+
+    @objc func indentationToTabs(_ sender: Any?) {
+        let width = style.tabWidth
+        transformText { Indentation.convert($0, toSpaces: false, width: width) }
+    }
+
+    /// Typed like any other text, so it goes to every cursor.
+    private func type(_ string: String) {
+        insertText(string, replacementRange: NSRange(location: NSNotFound, length: 0))
+    }
+
+    @objc func insertDate(_ sender: Any?) {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.dateFormat = "yyyy-MM-dd"
+        type(formatter.string(from: Date()))
+    }
+
+    @objc func insertDateAndTime(_ sender: Any?) {
+        type(ISO8601DateFormatter.string(from: Date(), timeZone: .current, formatOptions: [.withInternetDateTime]))
+    }
+
+    @objc func insertUUID(_ sender: Any?) {
+        type(UUID().uuidString)
+    }
+
     override func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
         if menuItem.action == #selector(toggleComment(_:)) {
             return lineComment != nil || blockComment != nil
@@ -653,8 +746,19 @@ final class EditorTextView: NSTextView {
         currentLineRect = rect
     }
 
+    /// A thin line after the column chosen in Settings. It lines up with text in a fixed-width font.
+    private func drawPageGuide(in rect: NSRect) {
+        guard style.pageGuide > 0, let textContainer else { return }
+        let width = columnWidth ?? (" " as NSString).size(withAttributes: [.font: style.font]).width
+        columnWidth = width
+        let x = textContainerOrigin.x + textContainer.lineFragmentPadding + width * CGFloat(style.pageGuide)
+        Theme.pageGuide.setFill()
+        NSRect(x: x.rounded(), y: rect.minY, width: 1, height: rect.height).fill(using: .sourceOver)
+    }
+
     override func drawBackground(in rect: NSRect) {
         super.drawBackground(in: rect)
+        drawPageGuide(in: rect)
         drawBracketMatch()
         guard let line = caretLineRect() else { return }
         currentLineRect = line

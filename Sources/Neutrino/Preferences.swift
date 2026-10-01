@@ -32,6 +32,12 @@ enum Prefs {
     static let trimTrailingWhitespace = "trimTrailingWhitespace"
     static let ensureFinalNewline = "ensureFinalNewline"
     static let autosave = "autosave"
+    static let detectIndentation = "detectIndentation"
+    /// The column of the page guide; 0 for none.
+    static let pageGuide = "pageGuide"
+    static let checkSpelling = "checkSpelling"
+    /// Where the caret was in recently closed files, oldest first, as "location\tpath".
+    static let positions = "positions"
     /// The macOS setting that keeps an app's windows, and the unsaved text in them, across a quit.
     static let keepWindows = "NSQuitAlwaysKeepsWindows"
     static let checkForUpdates = "checkForUpdates"
@@ -61,6 +67,9 @@ enum Prefs {
             trimTrailingWhitespace: false,
             ensureFinalNewline: false,
             autosave: true,
+            detectIndentation: true,
+            pageGuide: 0,
+            checkSpelling: false,
             checkForUpdates: true,
         ])
     }
@@ -85,6 +94,25 @@ enum Prefs {
         defaults.set(min(max(size, 8), 48), forKey: fontSize)
     }
 
+    /// The caret position remembered for a file, if it was open before.
+    static func position(for url: URL) -> Int? {
+        let suffix = "\t" + url.path
+        let entry = UserDefaults.standard.stringArray(forKey: positions)?.last { $0.hasSuffix(suffix) }
+        return entry.flatMap { Int($0.dropLast(suffix.count)) }
+    }
+
+    /// Remembers where the caret is in a file, for the next time it is opened.
+    static func setPosition(_ location: Int, for url: URL) {
+        let suffix = "\t" + url.path
+        var entries = UserDefaults.standard.stringArray(forKey: positions) ?? []
+        let entry = "\(location)" + suffix
+        if entries.last == entry { return }
+        entries.removeAll { $0.hasSuffix(suffix) }
+        // The start of a file is where it opens anyway.
+        if location > 0 { entries.append(entry) }
+        UserDefaults.standard.set(Array(entries.suffix(300)), forKey: positions)
+    }
+
     static var appearanceMode: AppearanceMode {
         AppearanceMode(rawValue: UserDefaults.standard.string(forKey: appearance) ?? "") ?? .system
     }
@@ -102,6 +130,8 @@ struct EditorStyle: Equatable {
     var highlightCurrentLine: Bool
     var autoIndent: Bool
     var autoCloseBrackets: Bool
+    var pageGuide: Int
+    var checkSpelling: Bool
     /// The installed theme in use; empty for the built-in colours.
     var theme: String
 
@@ -118,6 +148,8 @@ struct EditorStyle: Equatable {
             highlightCurrentLine: defaults.bool(forKey: Prefs.highlightCurrentLine),
             autoIndent: defaults.bool(forKey: Prefs.autoIndent),
             autoCloseBrackets: defaults.bool(forKey: Prefs.autoCloseBrackets),
+            pageGuide: min(max(defaults.integer(forKey: Prefs.pageGuide), 0), 400),
+            checkSpelling: defaults.bool(forKey: Prefs.checkSpelling),
             theme: defaults.string(forKey: Prefs.theme) ?? "")
     }
 

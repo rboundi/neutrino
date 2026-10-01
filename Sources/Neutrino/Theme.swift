@@ -12,6 +12,9 @@ enum Theme {
     static var findMatch: NSColor { ThemeStore.shared.active?.findMatch ?? defaultFindMatch }
     static var selection: NSColor { ThemeStore.shared.active?.selection ?? .selectedTextBackgroundColor }
     static var bracketMatch: NSColor { text.withAlphaComponent(0.22) }
+    /// Behind the other places the selected word occurs.
+    static var occurrence: NSColor { text.withAlphaComponent(0.13) }
+    static var pageGuide: NSColor { text.withAlphaComponent(0.12) }
 
     private static let defaultCurrentLine = dynamic(light: 0x000000, dark: 0xFFFFFF, alpha: 0.05)
     private static let defaultFindMatch = dynamic(light: 0xFFE14D, dark: 0x8A6D00, alpha: 0.55)

@@ -89,6 +89,9 @@ private struct EditorSettings: View {
     @AppStorage(Prefs.highlightCurrentLine) private var highlightCurrentLine = true
     @AppStorage(Prefs.autoIndent) private var autoIndent = true
     @AppStorage(Prefs.autoCloseBrackets) private var autoCloseBrackets = true
+    @AppStorage(Prefs.detectIndentation) private var detectIndentation = true
+    @AppStorage(Prefs.pageGuide) private var pageGuide = 0
+    @AppStorage(Prefs.checkSpelling) private var checkSpelling = false
     @AppStorage(Prefs.trimTrailingWhitespace) private var trimTrailingWhitespace = false
     @AppStorage(Prefs.ensureFinalNewline) private var ensureFinalNewline = false
 
@@ -124,6 +127,7 @@ private struct EditorSettings: View {
                     Text("\(tabWidth)").monospacedDigit().foregroundStyle(.secondary)
                     Stepper("", value: $tabWidth, in: 1...16).labelsHidden()
                 }
+                Toggle("Use the indentation a file already has", isOn: $detectIndentation)
                 Toggle("Keep the indentation on new lines", isOn: $autoIndent)
                 Toggle("Close brackets and quotes", isOn: $autoCloseBrackets)
             }
@@ -132,6 +136,11 @@ private struct EditorSettings: View {
                 Toggle("Line numbers", isOn: $lineNumbers)
                 Toggle("Highlight the current line", isOn: $highlightCurrentLine)
                 Toggle("Show invisible characters", isOn: $showInvisibles)
+                Picker("Page guide", selection: $pageGuide) {
+                    Text("None").tag(0)
+                    ForEach([72, 80, 100, 120], id: \.self) { Text("After column \($0)").tag($0) }
+                }
+                Toggle("Check spelling while typing", isOn: $checkSpelling)
             }
             Section("When saving") {
                 Toggle("Remove trailing spaces", isOn: $trimTrailingWhitespace)

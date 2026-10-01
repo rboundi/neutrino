@@ -31,6 +31,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         }
     }
 
+    func applicationWillTerminate(_ notification: Notification) {
+        // Quitting doesn't close the documents, so their caret positions are remembered here.
+        for case let document as Document in NSDocumentController.shared.documents {
+            document.editor?.savePosition()
+        }
+    }
+
     func applicationSupportsSecureRestorableState(_ app: NSApplication) -> Bool { true }
 
     @objc private func defaultsChanged() {
@@ -93,6 +100,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
 
     func menuNeedsUpdate(_ menu: NSMenu) {
         menu.removeAllItems()
+        if menu.identifier == MainMenu.compareMenu { return fillCompareMenu(menu) }
         let urls = NSDocumentController.shared.recentDocumentURLs
         for url in urls {
             let item = menu.addItem(withTitle: url.lastPathComponent, action: #selector(openRecent(_:)), keyEquivalent: "")
@@ -103,6 +111,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         if !urls.isEmpty { menu.addItem(.separator()) }
         menu.addItem(
             withTitle: "Clear Menu", action: #selector(NSDocumentController.clearRecentDocuments(_:)), keyEquivalent: "")
+    }
+
+    /// Every other open document that is short enough to compare with the one in front.
+    private func fillCompareMenu(_ menu: NSMenu) {
+        let current = NSDocumentController.shared.currentDocument as? Document
+        let others = NSDocumentController.shared.documents.compactMap { $0 as? Document }
+            .filter { $0 !== current && $0.isComparable }
+        if let current, current.isComparable {
+            for other in others {
+                let item = menu.addItem(
+                    withTitle: other.displayName ?? "Untitled", action: #selector(Document.compareWithTab(_:)),
+                    keyEquivalent: "")
+                item.target = current
+                item.representedObject = other
+                item.toolTip = other.fileURL.map { ($0.path as NSString).abbreviatingWithTildeInPath }
+            }
+        }
+        if menu.items.isEmpty {
+            menu.addItem(withTitle: "No Other Tabs", action: nil, keyEquivalent: "").isEnabled = false
+        }
     }
 
     @objc private func openRecent(_ sender: NSMenuItem) {

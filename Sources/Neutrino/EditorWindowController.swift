@@ -25,8 +25,8 @@ struct Unchecked<Value>: @unchecked Sendable {
     let value: Value
 }
 
-/// One document's window (or tab): the text view, line numbers, find bar and status bar.
-final class EditorWindowController: NSWindowController, NSWindowDelegate, NSTextViewDelegate {
+/// One document's window (or tab): the text, line numbers, find bar and status bar.
+final class EditorWindowController: NSWindowController, NSWindowDelegate, NSTextViewDelegate, NSMenuItemValidation {
     /// Above this many UTF-16 units a file is shown without colours.
     static let highlightLimit = 4_000_000
     /// A scan that takes longer than this many seconds is abandoned and colours are turned off.
@@ -36,15 +36,23 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSText
     /// Above this, background work waits for a pause in typing.
     static let debounceLimit = 400_000
 
-    let textView: EditorTextView
+    /// The views of the text: one, or two while the window is split.
+    private(set) var panes: [EditorPane]
+    private var activeView: EditorTextView
+    private let split = NSSplitView()
     let findBar = FindBar()
     let resultsView = FindResultsView()
-    private let layoutManager = EditorLayoutManager()
-    private let scrollView = NSScrollView()
-    private let gutter = GutterView()
     let statusBar = StatusBar()
-    private var gutterWidth: NSLayoutConstraint!
     private var style = EditorStyle.current
+
+    /// The text view that has, or last had, the keyboard.
+    var textView: EditorTextView {
+        if let focused = window?.firstResponder as? EditorTextView, focused !== activeView,
+            panes.contains(where: { $0.textView === focused }) {
+            activeView = focused
+        }
+        return activeView
+    }
 
     private(set) var tokens: [Token] = []
     /// False until the first full scan with the current syntax has finished.
@@ -54,10 +62,13 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSText
     private var editedStart: Int?
     private var editedTail = 0
     private let tokenGeneration = Generation()
-    private var decorated = NSRange(location: 0, length: 0)
     private var editPending = false
     /// Set when the syntax proved too slow for this text; cleared when the syntax changes.
     private var highlightTimedOut = false
+    /// The selected word, while its other occurrences are marked.
+    private var occurrence: String?
+    /// Set once something has put the caret where it should be, such as `neutrino file:42`.
+    private var positionWasSet = false
 
     // Find state; the logic is in EditorFind.swift.
     var matches: [NSRange] = []
@@ -83,16 +94,12 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSText
     }
 
     /// The text without the copy that `NSTextView.string` makes.
-    var text: NSMutableString { textView.textStorage!.mutableString }
-
+    var text: NSMutableString { activeView.textStorage!.mutableString }
 
     init(document: Document) {
-        let container = NSTextContainer(size: NSSize(width: 0, height: CGFloat.greatestFiniteMagnitude))
-        container.widthTracksTextView = true
-        layoutManager.allowsNonContiguousLayout = true
-        layoutManager.addTextContainer(container)
-        document.textStorage.addLayoutManager(layoutManager)
-        textView = EditorTextView(frame: NSRect(x: 0, y: 0, width: 800, height: 500), textContainer: container)
+        let pane = EditorPane(storage: document.textStorage)
+        panes = [pane]
+        activeView = pane.textView
 
         let window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 880, height: 640),
@@ -105,23 +112,13 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSText
         window.delegate = self
         windowFrameAutosaveName = "Editor"
 
-        configureTextView()
         buildLayout(in: window)
-        gutter.textView = textView
-        gutter.lineIndex = { [weak document] in document?.lineIndex ?? LineIndex() }
         statusBar.editor = self
         findBar.delegate = self
         resultsView.onSelect = { [weak self] in self?.reveal($0) }
         resultsView.onClose = { [weak self] in self?.resultsView.isHidden = true }
 
         let center = NotificationCenter.default
-        scrollView.contentView.postsBoundsChangedNotifications = true
-        textView.postsFrameChangedNotifications = true
-        center.addObserver(
-            self, selector: #selector(viewportChanged), name: NSView.boundsDidChangeNotification,
-            object: scrollView.contentView)
-        center.addObserver(
-            self, selector: #selector(viewportChanged), name: NSView.frameDidChangeNotification, object: textView)
         center.addObserver(self, selector: #selector(syntaxChanged), name: Document.syntaxDidChange, object: document)
         center.addObserver(self, selector: #selector(formatChanged), name: Document.formatDidChange, object: document)
         center.addObserver(self, selector: #selector(formatChanged), name: SyntaxStore.didChange, object: nil)
@@ -129,81 +126,47 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSText
             self, selector: #selector(defaultsChanged), name: UserDefaults.didChangeNotification, object: nil)
         center.addObserver(self, selector: #selector(themeChanged), name: ThemeStore.didChange, object: nil)
 
-        textView.isCode = { [weak self] index in self?.isCode(at: index) ?? true }
         style = document.style
-        apply(style, initial: true)
+        adopt(pane, document: document)
         adoptSyntax(of: document)
         statusBar.update()
         updatePosition()
-        window.makeFirstResponder(textView)
-        // The first layout leaves the view scrolled past the space above the first line.
-        DispatchQueue.main.async { [weak self] in
-            // Not when something has already moved the caret, such as `neutrino file:42`.
-            guard let self, self.textView.selectedRange().location == 0 else { return }
-            self.textView.scroll(NSPoint(x: 0, y: 0))
-        }
+        window.makeFirstResponder(pane.textView)
+        // After the first layout, which leaves the view scrolled past the space above the first line.
+        DispatchQueue.main.async { [weak self] in self?.restorePosition() }
     }
 
     required init?(coder: NSCoder) { fatalError() }
 
     // MARK: Setup
 
-    private func configureTextView() {
-        textView.delegate = self
-        textView.isRichText = false
-        textView.importsGraphics = false
-        textView.allowsUndo = true
-        textView.usesFontPanel = false
-        textView.usesFindBar = false
-        textView.isAutomaticQuoteSubstitutionEnabled = false
-        textView.isAutomaticDashSubstitutionEnabled = false
-        textView.isAutomaticTextReplacementEnabled = false
-        textView.isAutomaticSpellingCorrectionEnabled = false
-        textView.isAutomaticLinkDetectionEnabled = false
-        textView.isAutomaticDataDetectionEnabled = false
-        textView.isAutomaticTextCompletionEnabled = false
-        textView.isContinuousSpellCheckingEnabled = false
-        textView.isGrammarCheckingEnabled = false
-        textView.smartInsertDeleteEnabled = false
-        textView.backgroundColor = Theme.background
-        textView.insertionPointColor = Theme.text
-        textView.textContainerInset = NSSize(width: 2, height: 10)
-        textView.isVerticallyResizable = true
-        textView.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
-    }
-
     private func buildLayout(in window: NSWindow) {
-        scrollView.documentView = textView
-        scrollView.hasVerticalScroller = true
-        scrollView.autohidesScrollers = true
-        scrollView.borderType = .noBorder
-        scrollView.backgroundColor = Theme.background
+        split.isVertical = false
+        split.dividerStyle = .thin
+        split.addArrangedSubview(panes[0].view)
 
-        let editorRow = NSView()
-        for view in [gutter, scrollView] as [NSView] {
-            view.translatesAutoresizingMaskIntoConstraints = false
-            editorRow.addSubview(view)
-        }
-        gutterWidth = gutter.widthAnchor.constraint(equalToConstant: 40)
+        // A plain view around the split view takes whatever height the bars leave.
+        let editorArea = NSView()
+        split.translatesAutoresizingMaskIntoConstraints = false
+        editorArea.addSubview(split)
         NSLayoutConstraint.activate([
-            gutterWidth,
-            gutter.leadingAnchor.constraint(equalTo: editorRow.leadingAnchor),
-            gutter.topAnchor.constraint(equalTo: editorRow.topAnchor),
-            gutter.bottomAnchor.constraint(equalTo: editorRow.bottomAnchor),
-            scrollView.leadingAnchor.constraint(equalTo: gutter.trailingAnchor),
-            scrollView.trailingAnchor.constraint(equalTo: editorRow.trailingAnchor),
-            scrollView.topAnchor.constraint(equalTo: editorRow.topAnchor),
-            scrollView.bottomAnchor.constraint(equalTo: editorRow.bottomAnchor),
+            split.leadingAnchor.constraint(equalTo: editorArea.leadingAnchor),
+            split.trailingAnchor.constraint(equalTo: editorArea.trailingAnchor),
+            split.topAnchor.constraint(equalTo: editorArea.topAnchor),
+            split.bottomAnchor.constraint(equalTo: editorArea.bottomAnchor),
         ])
 
         findBar.isHidden = true
         resultsView.isHidden = true
-        let stack = NSStackView(views: [findBar, editorRow, resultsView, statusBar])
+        let stack = NSStackView(views: [findBar, editorArea, resultsView, statusBar])
         stack.orientation = .vertical
         stack.alignment = .leading
         stack.spacing = 0
+        // The bars keep their heights and the editor takes the rest.
+        stack.distribution = .fill
         stack.translatesAutoresizingMaskIntoConstraints = false
-        editorRow.setContentHuggingPriority(.defaultLow, for: .vertical)
+        editorArea.setContentHuggingPriority(.init(1), for: .vertical)
+        editorArea.setContentCompressionResistancePriority(.init(1), for: .vertical)
 
         let content = NSView()
         content.addSubview(stack)
@@ -220,88 +183,149 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSText
         window.contentView = content
     }
 
+    /// Connects a new pane to this window and gives it the current settings and syntax.
+    private func adopt(_ pane: EditorPane, document: Document) {
+        pane.textView.delegate = self
+        pane.textView.isCode = { [weak self] index in self?.isCode(at: index) ?? true }
+        pane.gutter.lineIndex = { [weak document] in document?.lineIndex ?? LineIndex() }
+        let center = NotificationCenter.default
+        center.addObserver(
+            self, selector: #selector(viewportChanged(_:)), name: NSView.boundsDidChangeNotification,
+            object: pane.scrollView.contentView)
+        center.addObserver(
+            self, selector: #selector(viewportChanged(_:)), name: NSView.frameDidChangeNotification,
+            object: pane.textView)
+        configure(pane, from: nil)
+        applySyntaxSettings(to: pane, of: document)
+    }
+
+    /// Where the caret was when the file was last closed, unless something has already moved it.
+    private func restorePosition() {
+        guard !positionWasSet, activeView.selectedRange().location == 0 else { return }
+        if let url = doc?.fileURL, let location = Prefs.position(for: url), location <= text.length {
+            let caret = NSRange(location: location, length: 0)
+            activeView.setSelectedRange(caret)
+            activeView.scrollRangeToVisible(caret)
+        } else {
+            activeView.scroll(NSPoint(x: 0, y: 0))
+        }
+    }
+
+    /// Remembers the caret position for the next time this file is opened.
+    func savePosition() {
+        guard let url = doc?.fileURL else { return }
+        Prefs.setPosition(activeView.selectedRange().location, for: url)
+    }
+
     // MARK: Settings
 
     @objc private func defaultsChanged() {
         DispatchQueue.main.async { [weak self] in
             guard let self else { return }
             let new = self.doc?.style ?? EditorStyle.current
-            if new != self.style { self.apply(new, initial: false) }
+            if new != self.style { self.apply(new) }
         }
     }
 
-    private func apply(_ new: EditorStyle, initial: Bool) {
+    private func apply(_ new: EditorStyle) {
         let old = style
         style = new
-        textView.style = new
-
-        if initial || old.fontName != new.fontName || old.fontSize != new.fontSize || old.tabWidth != new.tabWidth {
-            let attributes = new.textAttributes
-            if !initial, let storage = textView.textStorage {
-                storage.setAttributes(attributes, range: NSRange(location: 0, length: storage.length))
-            }
-            textView.typingAttributes = attributes
-            layoutManager.invisiblesFont = new.font
-            gutter.font = .monospacedDigitSystemFont(ofSize: max(9, CGFloat(new.fontSize) - 2), weight: .regular)
+        if old.fontName != new.fontName || old.fontSize != new.fontSize || old.tabWidth != new.tabWidth,
+            let storage = activeView.textStorage {
+            storage.setAttributes(new.textAttributes, range: NSRange(location: 0, length: storage.length))
         }
-        if initial || old.wrapLines != new.wrapLines {
-            applyWrap(new.wrapLines)
-        }
-        if initial || old.theme != new.theme {
-            applyTheme(recolourText: !initial)
-        }
-        gutter.isHidden = !new.lineNumbers
-        updateGutterWidth()
-        layoutManager.showsInvisibles = new.showInvisibles
+        if old.theme != new.theme { recolourText() }
+        for pane in panes { configure(pane, from: old) }
         statusBar.update()
-        decorated.length = 0
-        textView.needsDisplay = true
-        gutter.needsDisplay = true
-        decorateVisible()
+    }
+
+    /// Applies the settings to one pane. `old` is what it had before; nil for a new pane.
+    private func configure(_ pane: EditorPane, from old: EditorStyle?) {
+        let new = style
+        pane.textView.style = new
+        if old == nil || old?.fontName != new.fontName || old?.fontSize != new.fontSize || old?.tabWidth != new.tabWidth {
+            pane.textView.typingAttributes = new.textAttributes
+            pane.layoutManager.invisiblesFont = new.font
+            pane.gutter.font = .monospacedDigitSystemFont(ofSize: max(9, CGFloat(new.fontSize) - 2), weight: .regular)
+        }
+        if old == nil || old?.wrapLines != new.wrapLines { pane.applyWrap(new.wrapLines) }
+        if let old, old.theme != new.theme { pane.applyTheme() }
+        // Only when the setting itself changes, so a choice made in the text's own menu stays.
+        if old?.checkSpelling != new.checkSpelling {
+            pane.textView.isContinuousSpellCheckingEnabled = new.checkSpelling
+        }
+        pane.setLineNumbers(shown: new.lineNumbers, lineCount: doc?.lineIndex.count ?? 1)
+        pane.layoutManager.showsInvisibles = new.showInvisibles
+        pane.decorated.length = 0
+        pane.textView.needsDisplay = true
+        pane.gutter.needsDisplay = true
+        decorate(pane)
     }
 
     @objc private func themeChanged() {
-        applyTheme(recolourText: true)
-        decorated.length = 0
-        decorateVisible()
+        recolourText()
+        for pane in panes {
+            pane.applyTheme()
+            pane.decorated.length = 0
+            decorate(pane)
+        }
     }
 
-    /// Takes the colours of the theme in use. Syntax colours are looked up again when the
+    /// Gives all the text the theme's text colour. Syntax colours are looked up again when the
     /// visible text is next decorated.
-    private func applyTheme(recolourText: Bool) {
-        textView.backgroundColor = Theme.background
-        textView.insertionPointColor = Theme.text
-        textView.selectedTextAttributes = [.backgroundColor: Theme.selection]
-        scrollView.backgroundColor = Theme.background
-        if recolourText, let storage = textView.textStorage {
-            storage.addAttribute(.foregroundColor, value: Theme.text, range: NSRange(location: 0, length: storage.length))
-            textView.typingAttributes = style.textAttributes
-        }
-        textView.needsDisplay = true
-        gutter.needsDisplay = true
-    }
-
-    private func applyWrap(_ wrap: Bool) {
-        guard let container = textView.textContainer else { return }
-        let width = scrollView.contentSize.width
-        scrollView.hasHorizontalScroller = !wrap
-        textView.isHorizontallyResizable = !wrap
-        if wrap {
-            textView.autoresizingMask = [.width]
-            container.size = NSSize(width: width, height: CGFloat.greatestFiniteMagnitude)
-            container.widthTracksTextView = true
-            textView.setFrameSize(NSSize(width: width, height: textView.frame.height))
-        } else {
-            textView.autoresizingMask = [.width, .height]
-            container.widthTracksTextView = false
-            container.size = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
-        }
-        textView.sizeToFit()
+    private func recolourText() {
+        guard let storage = activeView.textStorage else { return }
+        storage.addAttribute(.foregroundColor, value: Theme.text, range: NSRange(location: 0, length: storage.length))
+        for pane in panes { pane.textView.typingAttributes = style.textAttributes }
     }
 
     private func updateGutterWidth() {
-        let width = style.lineNumbers ? gutter.width(forLineCount: doc?.lineIndex.count ?? 1) : 0
-        if gutterWidth.constant != width { gutterWidth.constant = width }
+        for pane in panes {
+            pane.setLineNumbers(shown: style.lineNumbers, lineCount: doc?.lineIndex.count ?? 1)
+        }
+    }
+
+    // MARK: Split
+
+    /// Shows the document in two halves that scroll separately, or goes back to one.
+    @objc func toggleSplit(_ sender: Any?) {
+        guard let doc else { return }
+        if panes.count > 1 {
+            let closing = panes.removeLast()
+            let center = NotificationCenter.default
+            center.removeObserver(self, name: NSView.boundsDidChangeNotification, object: closing.scrollView.contentView)
+            center.removeObserver(self, name: NSView.frameDidChangeNotification, object: closing.textView)
+            closing.textView.delegate = nil
+            closing.view.removeFromSuperview()
+            doc.textStorage.removeLayoutManager(closing.layoutManager)
+            activeView = panes[0].textView
+            window?.makeFirstResponder(activeView)
+            return
+        }
+        let first = panes[0]
+        let pane = EditorPane(storage: doc.textStorage)
+        panes.append(pane)
+        split.addArrangedSubview(pane.view)
+        split.layoutSubtreeIfNeeded()
+        split.setPosition(split.bounds.height / 2, ofDividerAt: 0)
+        adopt(pane, document: doc)
+        // The new half starts where the first one is.
+        let caret = NSRange(location: first.textView.selectedRange().location, length: 0)
+        pane.textView.setSelectedRange(caret)
+        pane.textView.scrollRangeToVisible(caret)
+        window?.makeFirstResponder(pane.textView)
+    }
+
+    func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
+        if menuItem.action == #selector(toggleSplit(_:)) {
+            menuItem.state = panes.count > 1 ? .on : .off
+        }
+        return true
+    }
+
+    /// Stops or allows typing in every pane.
+    func setEditable(_ editable: Bool) {
+        for pane in panes { pane.textView.isEditable = editable }
     }
 
     // MARK: Syntax colours
@@ -312,19 +336,25 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSText
         statusBar.update()
     }
 
-    private func adoptSyntax(of document: Document) {
+    private func applySyntaxSettings(to pane: EditorPane, of document: Document) {
         let definition = document.syntax?.definition
-        textView.lineComment = definition?.lineComment
-        textView.blockComment = definition?.blockComment
-        textView.indentWithTabs = definition?.indentWithTabs == true
-        textView.indentAfterColon = definition?.indentAfterColon == true
+        pane.textView.lineComment = definition?.lineComment
+        pane.textView.blockComment = definition?.blockComment
+        pane.textView.indentWithTabs = definition?.indentWithTabs == true
+        pane.textView.indentAfterColon = definition?.indentAfterColon == true
+    }
+
+    private func adoptSyntax(of document: Document) {
         tokens = []
         tokensAreValid = false
         editedStart = nil
         highlightTimedOut = false
-        layoutManager.removeTemporaryAttribute(
-            .foregroundColor, forCharacterRange: NSRange(location: 0, length: document.textStorage.length))
-        decorated.length = 0
+        let whole = NSRange(location: 0, length: document.textStorage.length)
+        for pane in panes {
+            applySyntaxSettings(to: pane, of: document)
+            pane.layoutManager.removeTemporaryAttribute(.foregroundColor, forCharacterRange: whole)
+            pane.decorated.length = 0
+        }
         scheduleHighlight(of: document)
     }
 
@@ -413,21 +443,22 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSText
         return low
     }
 
+    /// Colours the text on screen in every pane.
+    func decorateVisible(force: Bool = false) {
+        for pane in panes { decorate(pane, force: force) }
+    }
+
     /// Colours the text on screen, plus a margin so short scrolls need no work.
     /// Only that part gets attributes, which keeps large files cheap.
-    func decorateVisible(force: Bool = false) {
-        guard let container = textView.textContainer else { return }
-        let visible = textView.visibleRect
-        let glyphs = layoutManager.glyphRange(forBoundingRect: visible, in: container)
-        let onScreen = layoutManager.characterRange(forGlyphRange: glyphs, actualGlyphRange: nil)
-        if !force, decorated.length > 0, onScreen.location >= decorated.location,
-            NSMaxRange(onScreen) <= NSMaxRange(decorated) {
+    private func decorate(_ pane: EditorPane, force: Bool = false) {
+        let onScreen = pane.visibleCharacters(padded: false)
+        if !force, pane.decorated.length > 0, onScreen.location >= pane.decorated.location,
+            NSMaxRange(onScreen) <= NSMaxRange(pane.decorated) {
             return
         }
-        let padded = visible.insetBy(dx: 0, dy: -visible.height)
-        let range = layoutManager.characterRange(
-            forGlyphRange: layoutManager.glyphRange(forBoundingRect: padded, in: container), actualGlyphRange: nil)
-        decorated = range
+        let range = pane.visibleCharacters(padded: true)
+        pane.decorated = range
+        let layoutManager = pane.layoutManager
 
         layoutManager.removeTemporaryAttribute(.foregroundColor, forCharacterRange: range)
         layoutManager.removeTemporaryAttribute(.backgroundColor, forCharacterRange: range)
@@ -441,6 +472,18 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSText
             }
             index += 1
         }
+        if let occurrence {
+            let selected = pane.textView.selectedRange()
+            var search = range
+            while search.length > 0 {
+                let found = text.range(of: occurrence, options: .literal, range: search)
+                guard found.location != NSNotFound else { break }
+                if found != selected, isWholeWord(found) {
+                    layoutManager.addTemporaryAttribute(.backgroundColor, value: Theme.occurrence, forCharacterRange: found)
+                }
+                search = NSRange(location: NSMaxRange(found), length: end - NSMaxRange(found))
+            }
+        }
         guard !findBar.isHidden else { return }
         index = Self.firstIndex(in: matches, endingAfter: range.location) { $0 }
         while index < matches.count, matches[index].location < end {
@@ -450,6 +493,46 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSText
             }
             index += 1
         }
+    }
+
+    private func invalidateDecoration() {
+        for pane in panes { pane.decorated.length = 0 }
+    }
+
+    // MARK: Occurrences of the selected word
+
+    private static let wordCharacters: NSCharacterSet = {
+        var set = CharacterSet.alphanumerics
+        set.insert("_")
+        return set as NSCharacterSet
+    }()
+
+    /// Whether the range has no letter, digit or underscore directly before or after it.
+    private func isWholeWord(_ range: NSRange) -> Bool {
+        let words = Self.wordCharacters
+        if range.location > 0, words.characterIsMember(text.character(at: range.location - 1)) { return false }
+        let end = NSMaxRange(range)
+        return end >= text.length || !words.characterIsMember(text.character(at: end))
+    }
+
+    /// The selection, when it is exactly one word; its other occurrences get marked.
+    private func selectedWord() -> String? {
+        let selection = activeView.selectedRange()
+        guard selection.length >= 2, selection.length <= 100, NSMaxRange(selection) <= text.length,
+            isWholeWord(selection)
+        else { return nil }
+        for index in selection.location..<NSMaxRange(selection)
+        where !Self.wordCharacters.characterIsMember(text.character(at: index)) {
+            return nil
+        }
+        return text.substring(with: selection)
+    }
+
+    private func updateOccurrences() {
+        let word = selectedWord()
+        guard word != occurrence else { return }
+        occurrence = word
+        decorateVisible(force: true)
     }
 
     // MARK: Edits and scrolling
@@ -487,18 +570,21 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSText
         DispatchQueue.main.async { [weak self] in
             guard let self, let doc = self.doc else { return }
             self.editPending = false
-            self.decorated.length = 0
+            self.invalidateDecoration()
             self.updateGutterWidth()
-            self.gutter.needsDisplay = true
+            for pane in self.panes { pane.gutter.needsDisplay = true }
             self.scheduleHighlight(of: doc)
             self.refreshMatches()
             self.updatePosition()
         }
     }
 
-    @objc private func viewportChanged() {
-        gutter.needsDisplay = true
-        decorateVisible()
+    @objc private func viewportChanged(_ notification: Notification) {
+        let source = notification.object as AnyObject?
+        guard let pane = panes.first(where: { $0.textView === source || $0.scrollView.contentView === source })
+        else { return }
+        pane.gutter.needsDisplay = true
+        decorate(pane)
     }
 
     @objc private func formatChanged() {
@@ -506,30 +592,54 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSText
         guard let doc else { return }
         // The document may have picked up an .editorconfig after being saved under a new name.
         let new = doc.style
-        if new != style { apply(new, initial: false) }
+        if new != style { apply(new) }
     }
 
     func textViewDidChangeSelection(_ notification: Notification) {
-        textView.updateCurrentLine()
-        textView.updateBracketMatch()
-        gutter.needsDisplay = true
+        let changed = notification.object as? EditorTextView ?? activeView
+        changed.updateCurrentLine()
+        changed.updateBracketMatch()
+        panes.first { $0.textView === changed }?.gutter.needsDisplay = true
+        guard changed === textView else { return }
+        updateOccurrences()
         updatePosition()
         if !findBar.isHidden { updateFindStatus() }
     }
 
     private func updatePosition() {
         guard let index = doc?.lineIndex else { return }
-        let selection = textView.selectedRange()
+        let view = activeView
+        let selection = view.selectedRange()
         let line = index.line(at: selection.location)
         var label = "Line \(line + 1), Column \(selection.location - index.start(ofLine: line) + 1)"
-        if textView.cursorCount > 1 {
-            label = "\(textView.cursorCount) cursors"
+        if view.cursorCount > 1 {
+            label = "\(view.cursorCount) cursors"
         } else if selection.length > 0 {
+            var parts: [String] = []
+            // Counting words reads the selection, so not for a very large one on every change.
+            if selection.length <= 1_000_000 {
+                parts.append(Self.count(TextStats.words(in: text, range: selection), "word"))
+            }
+            parts.append(Self.count(selection.length, "character"))
             let lines = index.line(at: NSMaxRange(selection)) - line + 1
-            label += lines > 1 ? "  (\(selection.length) characters, \(lines) lines selected)"
-                : "  (\(selection.length) selected)"
+            if lines > 1 { parts.append(Self.count(lines, "line")) }
+            label += "  (\(parts.joined(separator: ", ")) selected)"
         }
         statusBar.setPosition(label)
+    }
+
+    private static func count(_ number: Int, _ noun: String) -> String {
+        "\(number.formatted()) \(noun)\(number == 1 ? "" : "s")"
+    }
+
+    /// Shows the size of the whole document in the status bar until the caret next moves.
+    func showDocumentCounts() {
+        guard let index = doc?.lineIndex else { return }
+        let whole = NSRange(location: 0, length: text.length)
+        statusBar.setPosition([
+            Self.count(index.count, "line"), Self.count(TextStats.words(in: text, range: whole), "word"),
+            Self.count(whole.length, "character"),
+        ].joined(separator: ", "))
     }
 
     // MARK: Window
@@ -598,5 +708,6 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSText
         textView.setSelectedRange(range)
         textView.scrollRangeToVisible(range)
         window?.makeFirstResponder(textView)
+        positionWasSet = true
     }
 }

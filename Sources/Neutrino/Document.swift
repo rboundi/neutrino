@@ -13,6 +13,8 @@ final class Document: NSDocument, NSTextStorageDelegate {
     let textStorage = NSTextStorage()
     /// What the folder's `.editorconfig` files say about this document.
     private(set) var editorConfig = EditorConfig()
+    /// How the text itself is indented, worked out when it is read. Nil if it can't be told.
+    private var detectedIndentation: EditorConfig?
     private(set) var lineIndex = LineIndex()
     private(set) var encoding: String.Encoding = .utf8
     private(set) var hasBOM = false
@@ -37,9 +39,14 @@ final class Document: NSDocument, NSTextStorageDelegate {
         windowControllers.first as? EditorWindowController
     }
 
-    /// The editor settings for this document: the global ones with `.editorconfig` laid over them.
+    /// The editor settings for this document: the global ones, then the indentation the file
+    /// already uses, then what `.editorconfig` says.
     var style: EditorStyle {
-        EditorStyle.current.applying(editorConfig)
+        var style = EditorStyle.current
+        if let detectedIndentation, UserDefaults.standard.bool(forKey: Prefs.detectIndentation) {
+            style = style.applying(detectedIndentation)
+        }
+        return style.applying(editorConfig)
     }
 
     /// The text as a string that is safe to read on another thread.
@@ -121,6 +128,7 @@ final class Document: NSDocument, NSTextStorageDelegate {
         self.encoding = decoded.encoding
         hasBOM = decoded.hasBOM
         lineEnding = decoded.lineEnding
+        detectedIndentation = Indentation.detect(in: decoded.text as NSString)
         setText(decoded.text)
         detectSyntax()
         NotificationCenter.default.post(name: Self.formatDidChange, object: self)
@@ -229,6 +237,7 @@ final class Document: NSDocument, NSTextStorageDelegate {
     override func close() {
         NSObject.cancelPreviousPerformRequests(withTarget: self, selector: #selector(autosaveNow), object: nil)
         if let fileURL { (NSDocumentController.shared as? DocumentController)?.noteClosed(fileURL) }
+        editor?.savePosition()
         super.close()
     }
 
@@ -336,20 +345,40 @@ final class Document: NSDocument, NSTextStorageDelegate {
             let saved = TextCodec.decode(data, as: encoding)?.text
         else { return NSSound.beep() }
         let name = url.lastPathComponent
-        let current = textStorage.string
+        compare(
+            old: saved, named: "\(name) (saved)", new: textStorage.string, named: "\(name) (now)",
+            title: "Changes in \(name)", same: "The text is the same as the saved file.")
+    }
+
+    /// Opens a new document with the differences between this document and another open one.
+    /// The menu item carries the other document.
+    @objc func compareWithTab(_ sender: NSMenuItem) {
+        guard let other = sender.representedObject as? Document else { return }
+        let name = displayName ?? "Untitled"
+        let otherName = other.displayName ?? "Untitled"
+        compare(
+            old: textStorage.string, named: name, new: other.textStorage.string, named: otherName,
+            title: "\(name) and \(otherName)", same: "The two documents have the same text.")
+    }
+
+    /// Whether the text is short enough to compare without a long wait.
+    var isComparable: Bool { textStorage.length < 20 << 20 }
+
+    private func compare(
+        old: String, named oldName: String, new: String, named newName: String, title: String, same: String
+    ) {
         // Off the main thread: comparing two very different long files takes a while.
         DispatchQueue.global(qos: .userInitiated).async {
-            let diff = UnifiedDiff.make(
-                old: saved, new: current, oldName: "\(name) (saved)", newName: "\(name) (now)")
-            DispatchQueue.main.async { [weak self] in self?.showComparison(diff, of: name) }
+            let diff = UnifiedDiff.make(old: old, new: new, oldName: oldName, newName: newName)
+            DispatchQueue.main.async { [weak self] in self?.showComparison(diff, title: title, same: same) }
         }
     }
 
-    private func showComparison(_ diff: String?, of name: String) {
+    private func showComparison(_ diff: String?, title: String, same: String) {
         guard let diff else {
             let alert = NSAlert()
             alert.messageText = "No differences"
-            alert.informativeText = "The text is the same as the saved file."
+            alert.informativeText = same
             alert.runModal()
             return
         }
@@ -357,7 +386,7 @@ final class Document: NSDocument, NSTextStorageDelegate {
             let document = try? controller.makeUntitledDocument(ofType: Self.typeName) as? Document
         else { return }
         document.setText(diff)
-        document.displayName = "Changes in \(name)"
+        document.displayName = title
         document.setSyntax(id: "diff")
         controller.addDocument(document)
         document.makeWindowControllers()
@@ -366,7 +395,7 @@ final class Document: NSDocument, NSTextStorageDelegate {
 
     override func validateUserInterfaceItem(_ item: NSValidatedUserInterfaceItem) -> Bool {
         switch item.action {
-        case #selector(compareWithSaved(_:)): return fileURL != nil && textStorage.length < 20 << 20
+        case #selector(compareWithSaved(_:)): return fileURL != nil && isComparable
         case #selector(previewInMDReader(_:)): return isMarkdown && fileURL != nil
         default: return super.validateUserInterfaceItem(item)
         }

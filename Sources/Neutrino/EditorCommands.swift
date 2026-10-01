@@ -48,11 +48,11 @@ extension EditorWindowController {
         process.standardError = stderr
 
         // Nothing may change while the command runs, or its output would land in the wrong place.
-        textView.isEditable = false
+        setEditable(false)
         statusBar.setPosition("Running \(command)…")
         let finish = { [weak self] in
             guard let self else { return }
-            self.textView.isEditable = true
+            self.setEditable(true)
             self.textViewDidChangeSelection(Notification(name: NSTextView.didChangeSelectionNotification))
         }
 
