@@ -18,7 +18,7 @@ swift test
 - **App** (`Sources/Neutrino/`): AppKit and TextKit 1, with SwiftUI for the Settings pages. No third-party packages.
 - **Syntaxes** (`syntaxes/`): one JSON file per language. The format is in [docs/syntaxes.md](docs/syntaxes.md). After adding or changing one, run `scripts/make_index.py`.
 - **Themes** (`themes/`): one JSON file per theme. The format is in [docs/themes.md](docs/themes.md).
-- **Icon** (`scripts/make_icon.swift`): drawn in code. Run `./scripts/make_icon.sh` after changing it.
+- **Icon** (`Resources/AppIcon.icon`): a layered Icon Composer document. Run `./scripts/make_icon.sh` after changing it; it needs Xcode 26 or later.
 
 ## Guidelines
 

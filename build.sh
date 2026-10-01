@@ -38,7 +38,8 @@ mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp "$BIN_DIR/Neutrino" "$APP/Contents/MacOS/Neutrino"
 strip -x "$APP/Contents/MacOS/Neutrino"
 sed -e "s/__VERSION__/$VERSION/" -e "s/__BUILD__/$BUILD/" Resources/Info.plist > "$APP/Contents/Info.plist"
-cp Resources/AppIcon.icns "$APP/Contents/Resources/"
+# AppIcon.icns is the icon for macOS before 26; Assets.car holds the layered one for 26 and later.
+cp Resources/AppIcon.icns Resources/Assets.car "$APP/Contents/Resources/"
 cp Resources/neutrino "$APP/Contents/Resources/neutrino"
 chmod +x "$APP/Contents/Resources/neutrino"
 # The lists of published syntaxes and themes, so the app can offer them before it has been online.

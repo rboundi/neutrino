@@ -153,7 +153,7 @@ Sources/Neutrino/
 syntaxes/                       Published syntax files and their index
 themes/                         Published theme files and their index
 Resources/                      Info.plist, icon, the neutrino command
-scripts/                        Icon generator, index builder, release script
+scripts/                        Icon builder, index builder, release script
 Tests/                          Tests for NeutrinoCore and every syntax and theme file
 ```
 

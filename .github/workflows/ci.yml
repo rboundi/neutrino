@@ -31,5 +31,6 @@ jobs:
           test -x build/Neutrino.app/Contents/Resources/neutrino
           test -f build/Neutrino.app/Contents/Resources/syntaxes.json
           test -f build/Neutrino.app/Contents/Resources/themes.json
+          test -f build/Neutrino.app/Contents/Resources/Assets.car
           lipo -archs build/Neutrino.app/Contents/MacOS/Neutrino | grep -q x86_64
           codesign --verify --deep --strict build/Neutrino.app
