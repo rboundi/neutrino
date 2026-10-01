@@ -102,7 +102,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         file.insertItem(item, at: open + 1)
     }
 
+    /// Shows "Show Tab 1" to "Show Tab 8" only for tabs the front window has, and none of them
+    /// for a window without tabs.
+    private func updateTabItems(in menu: NSMenu) {
+        let count = (NSApp.keyWindow ?? NSApp.mainWindow)?.tabGroup?.windows.count ?? 0
+        let tabs = count > 1 ? count : 0
+        let action = #selector(showTab(_:))
+        for (index, item) in menu.items.enumerated() where item.action == action {
+            item.isHidden = item.tag == 9 ? tabs == 0 : item.tag > tabs
+            // The line above the first of them goes with them.
+            if item.tag == 1, index > 0, menu.items[index - 1].isSeparatorItem {
+                menu.items[index - 1].isHidden = tabs == 0
+            }
+        }
+    }
+
     func menuNeedsUpdate(_ menu: NSMenu) {
+        if menu === NSApp.windowsMenu { return updateTabItems(in: menu) }
         menu.removeAllItems()
         if menu.identifier == MainMenu.compareMenu { return fillCompareMenu(menu) }
         let urls = NSDocumentController.shared.recentDocumentURLs

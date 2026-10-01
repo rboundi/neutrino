@@ -161,6 +161,8 @@ enum MainMenu {
             let title = number == 9 ? "Show Last Tab" : "Show Tab \(number)"
             add(window, title, #selector(AppDelegate.showTab(_:)), String(number), target: delegate).tag = number
         }
+        // The delegate hides the tab items the front window has no tab for.
+        window.delegate = delegate
         NSApp.windowsMenu = window
 
         // Help
