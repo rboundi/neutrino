@@ -1,0 +1,15 @@
+{
+  "id": "json",
+  "name": "JSON",
+  "version": 1,
+  "extensions": ["json", "jsonc", "json5", "webmanifest", "geojson"],
+  "filenames": [".prettierrc", ".eslintrc", ".babelrc", "Package.resolved"],
+  "rules": [
+    {"scope": "comment", "match": "//.*"},
+    {"scope": "comment", "begin": "/\\*", "end": "\\*/"},
+    {"scope": "attribute", "match": "\"(?:\\\\.|[^\"\\\\\\n])*\"(?=\\s*:)"},
+    {"scope": "string", "begin": "\"", "end": "\"", "escape": "\\\\", "multiline": false},
+    {"scope": "constant", "words": ["true", "false", "null"]},
+    {"scope": "number", "match": "-?\\b\\d+(?:\\.\\d+)?(?:[eE][+-]?\\d+)?\\b"}
+  ]
+}

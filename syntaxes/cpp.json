@@ -1,0 +1,23 @@
+{
+  "id": "cpp",
+  "name": "C++",
+  "version": 1,
+  "extensions": ["cpp", "cc", "cxx", "hpp", "hh", "hxx", "ino"],
+  "lineComment": "//",
+  "blockComment": ["/*", "*/"],
+  "rules": [
+    {"scope": "comment", "match": "//.*"},
+    {"scope": "comment", "begin": "/\\*", "end": "\\*/"},
+    {"scope": "string", "match": "(?<=#include )<[^>\\n]+>"},
+    {"scope": "string", "match": "R\"(?<delim>[^(\\s]*)\\([\\s\\S]*?(?:\\)\\k<delim>\"|\\z)"},
+    {"scope": "string", "begin": "\"", "end": "\"", "escape": "\\\\", "multiline": false},
+    {"scope": "string", "begin": "'", "end": "'", "escape": "\\\\", "multiline": false},
+    {"scope": "keyword", "match": "^[ \\t]*#[ \\t]*\\w+"},
+    {"scope": "keyword", "words": ["auto", "break", "case", "const", "continue", "default", "do", "else", "enum", "extern", "for", "goto", "if", "inline", "register", "restrict", "return", "sizeof", "static", "struct", "switch", "typedef", "union", "volatile", "while", "_Alignas", "_Alignof", "_Atomic", "_Generic", "_Noreturn", "_Static_assert", "_Thread_local", "alignas", "alignof", "and", "and_eq", "bitand", "bitor", "catch", "class", "co_await", "co_return", "co_yield", "compl", "concept", "consteval", "constexpr", "constinit", "const_cast", "decltype", "delete", "dynamic_cast", "explicit", "export", "final", "friend", "mutable", "namespace", "new", "noexcept", "not", "not_eq", "operator", "or", "or_eq", "override", "private", "protected", "public", "reinterpret_cast", "requires", "static_assert", "static_cast", "template", "thread_local", "throw", "try", "typeid", "typename", "using", "virtual", "xor", "xor_eq"]},
+    {"scope": "type", "words": ["bool", "char", "double", "float", "int", "long", "short", "signed", "unsigned", "void", "size_t", "ssize_t", "ptrdiff_t", "wchar_t", "FILE", "char8_t", "char16_t", "char32_t", "string", "vector", "map", "set"]},
+    {"scope": "type", "match": "\\b\\w+_t\\b"},
+    {"scope": "constant", "words": ["NULL", "nullptr", "true", "false", "this"]},
+    {"scope": "number", "match": "\\b(?:0[xX][0-9a-fA-F']+|0[bB][01']+|\\d[\\d']*(?:\\.\\d+)?(?:[eE][+-]?\\d+)?)[uUlLfFdD]*\\b"},
+    {"scope": "function", "match": "\\b[A-Za-z_]\\w*(?=\\s*\\()"}
+  ]
+}

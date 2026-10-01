@@ -1,0 +1,23 @@
+{
+  "id": "ruby",
+  "name": "Ruby",
+  "version": 1,
+  "extensions": ["rb", "rake", "gemspec", "ru"],
+  "filenames": ["Gemfile", "Rakefile", "Podfile", "Fastfile", "Brewfile", "Vagrantfile"],
+  "firstLine": "^#!.*\\bruby",
+  "lineComment": "#",
+  "rules": [
+    {"scope": "comment", "begin": "^=begin\\b", "end": "^=end\\b"},
+    {"scope": "comment", "match": "#.*"},
+    {"scope": "string", "begin": "\"", "end": "\"", "escape": "\\\\"},
+    {"scope": "string", "begin": "'", "end": "'", "escape": "\\\\"},
+    {"scope": "constant", "match": "(?<![:\\w]):[A-Za-z_]\\w*[?!]?"},
+    {"scope": "variable", "match": "@{1,2}\\w+|\\$\\w+"},
+    {"scope": "function", "match": "(?<=\\bdef )[\\w.?!=]+"},
+    {"scope": "keyword", "words": ["alias", "and", "begin", "break", "case", "class", "def", "defined?", "do", "else", "elsif", "end", "ensure", "for", "if", "in", "module", "next", "not", "or", "redo", "rescue", "retry", "return", "then", "undef", "unless", "until", "when", "while", "yield", "require", "require_relative", "include", "extend", "attr_accessor", "attr_reader", "attr_writer", "private", "protected", "public", "raise"]},
+    {"scope": "constant", "words": ["nil", "true", "false", "self", "super", "__FILE__", "__LINE__"]},
+    {"scope": "type", "match": "\\b[A-Z]\\w*\\b"},
+    {"scope": "number", "match": "\\b(?:0[xX][0-9a-fA-F_]+|0[bB][01_]+|\\d[\\d_]*(?:\\.\\d[\\d_]*)?(?:[eE][+-]?\\d+)?)\\b"},
+    {"scope": "function", "match": "\\b[A-Za-z_]\\w*(?=\\s*\\()"}
+  ]
+}

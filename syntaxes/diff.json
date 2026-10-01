@@ -1,0 +1,13 @@
+{
+  "id": "diff",
+  "name": "Diff",
+  "version": 1,
+  "extensions": ["diff", "patch"],
+  "rules": [
+    {"scope": "keyword", "match": "^(?:diff|index|new file|deleted file|similarity|rename|old mode|new mode|Binary files)\\b.*"},
+    {"scope": "heading", "match": "^(?:\\+\\+\\+|---) .*"},
+    {"scope": "type", "match": "^@@.*?@@"},
+    {"scope": "inserted", "match": "^\\+.*"},
+    {"scope": "deleted", "match": "^-.*"}
+  ]
+}

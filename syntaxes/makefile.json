@@ -1,0 +1,19 @@
+{
+  "id": "makefile",
+  "name": "Makefile",
+  "version": 1,
+  "extensions": ["mk", "mak"],
+  "filenames": ["Makefile", "makefile", "GNUmakefile"],
+  "lineComment": "#",
+  "indentWithTabs": true,
+  "rules": [
+    {"scope": "comment", "match": "#.*"},
+    {"scope": "keyword", "match": "^\\.[A-Z_]+(?=[ \\t]*:)"},
+    {"scope": "attribute", "match": "^[ \\t]*[\\w.-]+(?=[ \\t]*[:+?!]?=)"},
+    {"scope": "function", "match": "^[^\\s#:=][^:=#\\n]*(?=:(?!=))"},
+    {"scope": "variable", "match": "\\$[({][^)}\\n]*[)}]|\\$[@<^+?*%$]"},
+    {"scope": "keyword", "words": ["include", "-include", "sinclude", "ifeq", "ifneq", "ifdef", "ifndef", "else", "endif", "define", "endef", "export", "unexport", "override", "vpath"]},
+    {"scope": "string", "begin": "\"", "end": "\"", "escape": "\\\\", "multiline": false},
+    {"scope": "string", "begin": "'", "end": "'", "escape": "\\\\", "multiline": false}
+  ]
+}

@@ -1,0 +1,17 @@
+{
+  "id": "xml",
+  "name": "XML",
+  "version": 1,
+  "extensions": ["xml", "plist", "svg", "xsd", "xsl", "xslt", "rss", "atom", "storyboard", "xib", "entitlements"],
+  "firstLine": "^<\\?xml",
+  "blockComment": ["<!--", "-->"],
+  "rules": [
+    {"scope": "comment", "begin": "<!--", "end": "-->"},
+    {"scope": "string", "match": "<!\\[CDATA\\[[\\s\\S]*?(?:\\]\\]>|\\z)"},
+    {"scope": "keyword", "match": "<![A-Za-z][^>]*>|<\\?[\\w-]+|\\?>"},
+    {"scope": "tag", "match": "</?[A-Za-z_][\\w:.-]*|/?>"},
+    {"scope": "attribute", "match": "(?<=\\s)[A-Za-z_:@][\\w:.@-]*(?=\\s*=)"},
+    {"scope": "string", "match": "(?<==)\"[^\"]*\"|(?<==)'[^']*'"},
+    {"scope": "constant", "match": "&[#\\w]+;"}
+  ]
+}

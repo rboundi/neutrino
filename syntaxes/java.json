@@ -1,0 +1,22 @@
+{
+  "id": "java",
+  "name": "Java",
+  "version": 1,
+  "extensions": ["java"],
+  "lineComment": "//",
+  "blockComment": ["/*", "*/"],
+  "rules": [
+    {"scope": "comment", "match": "//.*"},
+    {"scope": "comment", "begin": "/\\*", "end": "\\*/"},
+    {"scope": "string", "begin": "\"\"\"", "end": "\"\"\"", "escape": "\\\\"},
+    {"scope": "string", "begin": "\"", "end": "\"", "escape": "\\\\", "multiline": false},
+    {"scope": "string", "begin": "'", "end": "'", "escape": "\\\\", "multiline": false},
+    {"scope": "attribute", "match": "@\\w+"},
+    {"scope": "keyword", "words": ["abstract", "assert", "break", "case", "catch", "class", "const", "continue", "default", "do", "else", "enum", "exports", "extends", "final", "finally", "for", "goto", "if", "implements", "import", "instanceof", "interface", "module", "native", "new", "non-sealed", "package", "permits", "private", "protected", "public", "record", "requires", "return", "sealed", "static", "strictfp", "switch", "synchronized", "throw", "throws", "transient", "try", "var", "volatile", "while", "yield"]},
+    {"scope": "type", "words": ["boolean", "byte", "char", "double", "float", "int", "long", "short", "void"]},
+    {"scope": "constant", "words": ["true", "false", "null", "this", "super"]},
+    {"scope": "type", "match": "\\b[A-Z]\\w*\\b"},
+    {"scope": "number", "match": "\\b(?:0[xX][0-9a-fA-F']+|0[bB][01']+|\\d[\\d']*(?:\\.\\d+)?(?:[eE][+-]?\\d+)?)[uUlLfFdD]*\\b"},
+    {"scope": "function", "match": "\\b[A-Za-z_]\\w*(?=\\s*\\()"}
+  ]
+}

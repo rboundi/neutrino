@@ -1,0 +1,17 @@
+{
+  "id": "ini",
+  "name": "INI",
+  "version": 1,
+  "extensions": ["ini", "cfg", "conf", "properties", "desktop"],
+  "filenames": [".editorconfig", ".gitconfig", ".npmrc"],
+  "lineComment": "#",
+  "caseInsensitive": true,
+  "rules": [
+    {"scope": "comment", "match": "^[ \\t]*[;#].*"},
+    {"scope": "heading", "match": "^[ \\t]*\\[[^\\]\\n]*\\]"},
+    {"scope": "attribute", "match": "^[ \\t]*[^=;#\\[\\s][^=\\n]*?(?=[ \\t]*=)"},
+    {"scope": "string", "begin": "\"", "end": "\"", "escape": "\\\\", "multiline": false},
+    {"scope": "constant", "match": "\\b(?:true|false|yes|no|on|off)\\b"},
+    {"scope": "number", "match": "(?<![\\w.-])-?\\d+(?:\\.\\d+)?(?![\\w.-])"}
+  ]
+}

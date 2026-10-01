@@ -1,0 +1,21 @@
+{
+  "id": "kotlin",
+  "name": "Kotlin",
+  "version": 1,
+  "extensions": ["kt", "kts"],
+  "lineComment": "//",
+  "blockComment": ["/*", "*/"],
+  "rules": [
+    {"scope": "comment", "match": "//.*"},
+    {"scope": "comment", "begin": "/\\*", "end": "\\*/"},
+    {"scope": "string", "begin": "\"\"\"", "end": "\"\"\""},
+    {"scope": "string", "begin": "\"", "end": "\"", "escape": "\\\\", "multiline": false},
+    {"scope": "string", "begin": "'", "end": "'", "escape": "\\\\", "multiline": false},
+    {"scope": "attribute", "match": "@\\w+"},
+    {"scope": "keyword", "words": ["abstract", "actual", "annotation", "as", "break", "by", "catch", "class", "companion", "const", "constructor", "continue", "crossinline", "data", "do", "else", "enum", "expect", "external", "final", "finally", "for", "fun", "get", "if", "import", "in", "infix", "init", "inline", "inner", "interface", "internal", "is", "lateinit", "noinline", "object", "open", "operator", "out", "override", "package", "private", "protected", "public", "reified", "return", "sealed", "set", "suspend", "tailrec", "throw", "try", "typealias", "val", "value", "var", "vararg", "when", "where", "while"]},
+    {"scope": "constant", "words": ["true", "false", "null", "this", "super", "it"]},
+    {"scope": "type", "match": "\\b[A-Z]\\w*\\b"},
+    {"scope": "number", "match": "\\b(?:0[xX][0-9a-fA-F']+|0[bB][01']+|\\d[\\d']*(?:\\.\\d+)?(?:[eE][+-]?\\d+)?)[uUlLfFdD]*\\b"},
+    {"scope": "function", "match": "\\b[A-Za-z_]\\w*(?=\\s*\\()"}
+  ]
+}

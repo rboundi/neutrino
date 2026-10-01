@@ -1,0 +1,19 @@
+{
+  "id": "shell",
+  "name": "Shell",
+  "version": 1,
+  "extensions": ["sh", "bash", "zsh", "ksh", "command"],
+  "filenames": [".zshrc", ".bashrc", ".bash_profile", ".zprofile", ".profile", ".zshenv"],
+  "firstLine": "^#!.*\\b(?:ba|z|k|da)?sh\\b",
+  "lineComment": "#",
+  "rules": [
+    {"scope": "comment", "match": "(?<![\\w$\\\\{])#.*"},
+    {"scope": "string", "begin": "\"", "end": "\"", "escape": "\\\\"},
+    {"scope": "string", "begin": "'", "end": "'"},
+    {"scope": "variable", "match": "\\$\\{[^}\\n]*\\}|\\$[\\w@#?*!$-]\\w*"},
+    {"scope": "function", "match": "\\b[\\w-]+(?=\\s*\\(\\))"},
+    {"scope": "keyword", "words": ["if", "then", "else", "elif", "fi", "for", "while", "until", "do", "done", "case", "esac", "in", "function", "select", "time", "return", "break", "continue", "exit", "export", "local", "readonly", "declare", "typeset", "unset", "shift", "source", "alias"]},
+    {"scope": "function", "words": ["echo", "printf", "cd", "read", "test", "eval", "exec", "set", "trap", "wait"]},
+    {"scope": "number", "match": "\\b\\d+\\b"}
+  ]
+}

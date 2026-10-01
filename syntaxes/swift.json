@@ -1,0 +1,21 @@
+{
+  "id": "swift",
+  "name": "Swift",
+  "version": 1,
+  "extensions": ["swift"],
+  "lineComment": "//",
+  "blockComment": ["/*", "*/"],
+  "rules": [
+    {"scope": "comment", "match": "//.*"},
+    {"scope": "comment", "begin": "/\\*", "end": "\\*/"},
+    {"scope": "string", "begin": "\"\"\"", "end": "\"\"\"", "escape": "\\\\"},
+    {"scope": "string", "begin": "\"", "end": "\"", "escape": "\\\\", "multiline": false},
+    {"scope": "attribute", "match": "@\\w+"},
+    {"scope": "keyword", "match": "#\\w+"},
+    {"scope": "keyword", "words": ["actor", "any", "as", "associatedtype", "async", "await", "break", "case", "catch", "class", "continue", "default", "defer", "deinit", "do", "else", "enum", "extension", "fallthrough", "fileprivate", "final", "for", "func", "get", "guard", "if", "import", "in", "indirect", "infix", "init", "inout", "internal", "is", "isolated", "lazy", "let", "mutating", "nonisolated", "nonmutating", "open", "operator", "optional", "override", "postfix", "precedencegroup", "prefix", "private", "protocol", "public", "repeat", "required", "rethrows", "return", "set", "some", "static", "struct", "subscript", "switch", "throw", "throws", "try", "typealias", "unowned", "var", "weak", "where", "while", "willSet", "didSet", "convenience", "dynamic", "consuming", "borrowing", "macro"]},
+    {"scope": "constant", "words": ["true", "false", "nil", "self", "Self", "super"]},
+    {"scope": "type", "match": "\\b[A-Z]\\w*\\b"},
+    {"scope": "number", "match": "\\b(?:0[xX][0-9a-fA-F_]+|0[bB][01_]+|\\d[\\d_]*(?:\\.\\d[\\d_]*)?(?:[eE][+-]?\\d+)?)\\b"},
+    {"scope": "function", "match": "\\b[A-Za-z_]\\w*(?=\\s*\\()"}
+  ]
+}

@@ -1,0 +1,34 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Test
+        run: swift test
+
+      - name: Syntax index is up to date
+        run: |
+          scripts/make_syntax_index.py
+          git diff --exit-code syntaxes/index.json
+
+      - name: Build app (universal)
+        run: ./build.sh
+
+      - name: Check the bundle
+        run: |
+          test -x build/Neutrino.app/Contents/MacOS/Neutrino
+          test -x build/Neutrino.app/Contents/Resources/neutrino
+          test -f build/Neutrino.app/Contents/Resources/syntaxes.json
+          lipo -archs build/Neutrino.app/Contents/MacOS/Neutrino | grep -q x86_64
+          codesign --verify --deep --strict build/Neutrino.app

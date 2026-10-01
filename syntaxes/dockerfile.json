@@ -1,0 +1,17 @@
+{
+  "id": "dockerfile",
+  "name": "Dockerfile",
+  "version": 1,
+  "extensions": ["dockerfile"],
+  "filenames": ["Dockerfile", "Containerfile"],
+  "lineComment": "#",
+  "caseInsensitive": true,
+  "rules": [
+    {"scope": "comment", "match": "^[ \\t]*#.*"},
+    {"scope": "keyword", "match": "^[ \\t]*(?:FROM|RUN|CMD|LABEL|MAINTAINER|EXPOSE|ENV|ADD|COPY|ENTRYPOINT|VOLUME|USER|WORKDIR|ARG|ONBUILD|STOPSIGNAL|HEALTHCHECK|SHELL)\\b|\\bAS\\b"},
+    {"scope": "string", "begin": "\"", "end": "\"", "escape": "\\\\", "multiline": false},
+    {"scope": "string", "begin": "'", "end": "'", "escape": "\\\\", "multiline": false},
+    {"scope": "variable", "match": "\\$\\{[^}\\n]*\\}|\\$\\w+"},
+    {"scope": "attribute", "match": "(?<=\\s)--[\\w-]+"}
+  ]
+}

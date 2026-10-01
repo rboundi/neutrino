@@ -1,0 +1,18 @@
+{
+  "id": "markdown",
+  "name": "Markdown",
+  "version": 1,
+  "extensions": ["md", "markdown", "mdown", "mkd", "mdx"],
+  "blockComment": ["<!--", "-->"],
+  "rules": [
+    {"scope": "string", "match": "^[ \\t]*(?<fence>`{3,}|~{3,})[^\\n]*\\n[\\s\\S]*?(?:^[ \\t]*\\k<fence>[ \\t]*$|\\z)"},
+    {"scope": "comment", "begin": "<!--", "end": "-->"},
+    {"scope": "heading", "match": "^#{1,6}\\s.*$"},
+    {"scope": "keyword", "match": "^[ \\t]*(?:[-*_][ \\t]*){3,}$"},
+    {"scope": "string", "match": "`[^`\\n]+`"},
+    {"scope": "link", "match": "!?\\[[^\\]\\n]*\\]\\([^)\\n]*\\)|<https?://[^>\\s]+>|https?://[^\\s)>\\]]+"},
+    {"scope": "emphasis", "match": "\\*\\*[^*\\n]+\\*\\*|__[^_\\n]+__|(?<![\\w*])\\*[^*\\s][^*\\n]*\\*(?!\\w)|(?<![\\w_])_[^_\\s][^_\\n]*_(?!\\w)"},
+    {"scope": "keyword", "match": "^[ \\t]*(?:[-*+]|\\d+[.)])\\s(?:\\[[ xX]\\])?"},
+    {"scope": "comment", "match": "^[ \\t]*>.*$"}
+  ]
+}

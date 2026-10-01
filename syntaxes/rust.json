@@ -1,0 +1,23 @@
+{
+  "id": "rust",
+  "name": "Rust",
+  "version": 1,
+  "extensions": ["rs"],
+  "lineComment": "//",
+  "blockComment": ["/*", "*/"],
+  "rules": [
+    {"scope": "comment", "match": "//.*"},
+    {"scope": "comment", "begin": "/\\*", "end": "\\*/"},
+    {"scope": "string", "match": "b?r(?<hashes>#*)\"[\\s\\S]*?(?:\"\\k<hashes>|\\z)"},
+    {"scope": "string", "begin": "b?\"", "end": "\"", "escape": "\\\\"},
+    {"scope": "string", "match": "b?'(?:\\\\[^'\\n]+|[^'\\\\\\n])'"},
+    {"scope": "attribute", "match": "#!?\\[[^\\]\\n]*\\]|'[a-z_]\\w*"},
+    {"scope": "function", "match": "\\b\\w+!"},
+    {"scope": "keyword", "words": ["as", "async", "await", "break", "const", "continue", "crate", "dyn", "else", "enum", "extern", "fn", "for", "if", "impl", "in", "let", "loop", "match", "mod", "move", "mut", "pub", "ref", "return", "static", "struct", "super", "trait", "type", "unsafe", "use", "where", "while"]},
+    {"scope": "type", "words": ["bool", "char", "f32", "f64", "i8", "i16", "i32", "i64", "i128", "isize", "str", "u8", "u16", "u32", "u64", "u128", "usize"]},
+    {"scope": "constant", "words": ["true", "false", "self", "Self"]},
+    {"scope": "type", "match": "\\b[A-Z]\\w*\\b"},
+    {"scope": "number", "match": "\\b(?:0x[0-9a-fA-F_]+|0b[01_]+|0o[0-7_]+|\\d[\\d_]*(?:\\.\\d[\\d_]*)?(?:[eE][+-]?\\d+)?)(?:[iuf](?:8|16|32|64|128|size))?\\b"},
+    {"scope": "function", "match": "\\b[A-Za-z_]\\w*(?=\\s*\\()"}
+  ]
+}

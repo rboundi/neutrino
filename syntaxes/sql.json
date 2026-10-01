@@ -1,0 +1,20 @@
+{
+  "id": "sql",
+  "name": "SQL",
+  "version": 1,
+  "extensions": ["sql"],
+  "lineComment": "--",
+  "blockComment": ["/*", "*/"],
+  "caseInsensitive": true,
+  "rules": [
+    {"scope": "comment", "match": "--.*"},
+    {"scope": "comment", "begin": "/\\*", "end": "\\*/"},
+    {"scope": "string", "match": "'(?:''|[^'])*'"},
+    {"scope": "variable", "match": "\"[^\"\\n]*\"|`[^`\\n]*`"},
+    {"scope": "keyword", "words": ["add", "all", "alter", "analyze", "and", "any", "as", "asc", "begin", "between", "by", "cascade", "case", "check", "column", "commit", "conflict", "constraint", "create", "cross", "current_date", "current_time", "current_timestamp", "database", "default", "delete", "desc", "distinct", "do", "drop", "else", "end", "except", "exists", "explain", "foreign", "from", "full", "function", "grant", "group", "having", "if", "ilike", "in", "index", "inner", "insert", "intersect", "into", "is", "join", "key", "left", "like", "limit", "materialized", "not", "offset", "on", "or", "order", "outer", "over", "partition", "primary", "procedure", "references", "returning", "revoke", "right", "rollback", "schema", "select", "set", "table", "then", "to", "transaction", "trigger", "truncate", "union", "unique", "update", "using", "values", "view", "when", "where", "window", "with"]},
+    {"scope": "type", "words": ["bigint", "bigserial", "binary", "bit", "blob", "bool", "boolean", "bytea", "char", "date", "datetime", "decimal", "double", "enum", "float", "int", "integer", "interval", "json", "jsonb", "numeric", "real", "serial", "smallint", "text", "time", "timestamp", "timestamptz", "tinyint", "uuid", "varchar"]},
+    {"scope": "constant", "words": ["null", "true", "false"]},
+    {"scope": "number", "match": "\\b\\d+(?:\\.\\d+)?\\b"},
+    {"scope": "function", "match": "\\b[A-Za-z_]\\w*(?=\\s*\\()"}
+  ]
+}

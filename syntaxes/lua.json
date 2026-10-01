@@ -1,0 +1,19 @@
+{
+  "id": "lua",
+  "name": "Lua",
+  "version": 1,
+  "extensions": ["lua"],
+  "lineComment": "--",
+  "blockComment": ["--[[", "]]"],
+  "rules": [
+    {"scope": "comment", "match": "--\\[(?<ceq>=*)\\[[\\s\\S]*?(?:\\]\\k<ceq>\\]|\\z)"},
+    {"scope": "comment", "match": "--.*"},
+    {"scope": "string", "match": "\\[(?<seq>=*)\\[[\\s\\S]*?(?:\\]\\k<seq>\\]|\\z)"},
+    {"scope": "string", "begin": "\"", "end": "\"", "escape": "\\\\", "multiline": false},
+    {"scope": "string", "begin": "'", "end": "'", "escape": "\\\\", "multiline": false},
+    {"scope": "keyword", "words": ["and", "break", "do", "else", "elseif", "end", "for", "function", "goto", "if", "in", "local", "not", "or", "repeat", "return", "then", "until", "while"]},
+    {"scope": "constant", "words": ["nil", "true", "false", "self"]},
+    {"scope": "number", "match": "\\b(?:0[xX][0-9a-fA-F_]+|0[bB][01_]+|\\d[\\d_]*(?:\\.\\d[\\d_]*)?(?:[eE][+-]?\\d+)?)\\b"},
+    {"scope": "function", "match": "\\b[A-Za-z_]\\w*(?=\\s*\\()"}
+  ]
+}

@@ -1,0 +1,19 @@
+{
+  "id": "css",
+  "name": "CSS",
+  "version": 1,
+  "extensions": ["css", "scss", "less"],
+  "blockComment": ["/*", "*/"],
+  "rules": [
+    {"scope": "comment", "begin": "/\\*", "end": "\\*/"},
+    {"scope": "string", "begin": "\"", "end": "\"", "escape": "\\\\", "multiline": false},
+    {"scope": "string", "begin": "'", "end": "'", "escape": "\\\\", "multiline": false},
+    {"scope": "keyword", "match": "@[\\w-]+|!important"},
+    {"scope": "variable", "match": "--[\\w-]+|\\$[\\w-]+"},
+    {"scope": "constant", "match": "#[0-9a-fA-F]{3,8}\\b"},
+    {"scope": "attribute", "match": "(?<![\\w.#:@-])[\\w-]+(?=\\s*:\\s)"},
+    {"scope": "type", "match": "[.#][A-Za-z_-][\\w-]*"},
+    {"scope": "function", "match": "[\\w-]+(?=\\()|::?[a-z-]+"},
+    {"scope": "number", "match": "(?<![\\w#-])-?(?:\\d+\\.?\\d*|\\.\\d+)(?:%|[a-zA-Z]+)?"}
+  ]
+}

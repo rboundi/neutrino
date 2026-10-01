@@ -1,0 +1,20 @@
+{
+  "id": "yaml",
+  "name": "YAML",
+  "version": 1,
+  "extensions": ["yaml", "yml"],
+  "filenames": [".clang-format", ".clang-tidy"],
+  "lineComment": "#",
+  "rules": [
+    {"scope": "comment", "match": "(?:^|(?<=\\s))#.*"},
+    {"scope": "keyword", "match": "^(?:---|\\.\\.\\.)[ \\t]*$"},
+    {"scope": "string", "begin": "\"", "end": "\"", "escape": "\\\\", "multiline": false},
+    {"scope": "string", "match": "'(?:''|[^'\\n])*'"},
+    {"scope": "attribute", "match": "(?:^|(?<=[\\s{,]))[^\\s#:'\\\"\\[\\]{},&*!|>-][^:#\\n]*?(?=[ \\t]*:(?:\\s|$))"},
+    {"scope": "variable", "match": "[&*][\\w-]+"},
+    {"scope": "type", "match": "!{1,2}[\\w/-]+"},
+    {"scope": "constant", "match": "\\b(?:true|false|null|yes|no|on|off|True|False|Null|TRUE|FALSE|NULL)\\b|(?<=:\\s)~"},
+    {"scope": "number", "match": "(?<![\\w.-])-?\\d+(?:\\.\\d+)?(?![\\w.-])"},
+    {"scope": "keyword", "match": "[|>][+-]?(?=[ \\t]*$)"}
+  ]
+}

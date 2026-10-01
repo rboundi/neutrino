@@ -1,0 +1,41 @@
+#!/bin/sh
+# neutrino — open files in Neutrino.
+#   neutrino main.c notes.txt     open files as tabs
+#   neutrino new.py               create the file if it doesn't exist, then open it
+#   git diff | neutrino           read text from a pipe
+#   neutrino                      bring Neutrino to the front
+BUNDLE_ID="com.movinapp.neutrino.macos"
+TMP="${TMPDIR:-/tmp}"
+
+if [ $# -eq 0 ]; then
+  # Only read stdin when something is actually piped or redirected in.
+  if [ -p /dev/stdin ] || [ -f /dev/stdin ]; then
+    # Clear out copies of earlier piped input.
+    find "$TMP" -maxdepth 1 -type d -name 'neutrino.*' -mtime +1 -exec rm -rf {} + 2>/dev/null
+    dir=$(mktemp -d "$TMP/neutrino.XXXXXX") || exit 1
+    cat > "$dir/stdin.txt"
+    set -- "$dir/stdin.txt"
+  else
+    exec open -b "$BUNDLE_ID"
+  fi
+fi
+
+for f in "$@"; do
+  if [ -d "$f" ]; then
+    echo "neutrino: $f: Is a folder" >&2
+    exit 1
+  fi
+  if [ ! -e "$f" ]; then
+    : > "$f" || exit 1
+  fi
+done
+
+# Keep names like "-notes.txt" from being read as options by open(1).
+first=1
+for f in "$@"; do
+  if [ "$first" = 1 ]; then set --; first=0; fi
+  case "$f" in -*) f="./$f" ;; esac
+  set -- "$@" "$f"
+done
+
+exec open -b "$BUNDLE_ID" "$@"

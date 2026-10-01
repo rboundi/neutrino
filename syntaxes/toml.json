@@ -1,0 +1,19 @@
+{
+  "id": "toml",
+  "name": "TOML",
+  "version": 1,
+  "extensions": ["toml"],
+  "filenames": ["Cargo.lock", "Pipfile", "uv.lock", "poetry.lock"],
+  "lineComment": "#",
+  "rules": [
+    {"scope": "comment", "match": "#.*"},
+    {"scope": "heading", "match": "^[ \\t]*\\[\\[?[^\\]\\n]*\\]\\]?"},
+    {"scope": "attribute", "match": "^[ \\t]*[\\w.\"'-]+(?=[ \\t]*=)"},
+    {"scope": "string", "begin": "\"\"\"", "end": "\"\"\"", "escape": "\\\\"},
+    {"scope": "string", "begin": "'''", "end": "'''"},
+    {"scope": "string", "begin": "\"", "end": "\"", "escape": "\\\\", "multiline": false},
+    {"scope": "string", "begin": "'", "end": "'", "multiline": false},
+    {"scope": "constant", "words": ["true", "false", "inf", "nan"]},
+    {"scope": "number", "match": "\\d{4}-\\d{2}-\\d{2}(?:[T ]\\d{2}:\\d{2}(?::\\d{2})?(?:\\.\\d+)?(?:Z|[+-]\\d{2}:\\d{2})?)?|[+-]?\\b(?:0[xX][0-9a-fA-F_]+|0[bB][01_]+|\\d[\\d_]*(?:\\.\\d[\\d_]*)?(?:[eE][+-]?\\d+)?)\\b"}
+  ]
+}

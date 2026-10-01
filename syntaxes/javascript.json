@@ -1,0 +1,21 @@
+{
+  "id": "javascript",
+  "name": "JavaScript",
+  "version": 1,
+  "extensions": ["js", "mjs", "cjs", "jsx"],
+  "firstLine": "^#!.*\\b(?:node|deno|bun)\\b",
+  "lineComment": "//",
+  "blockComment": ["/*", "*/"],
+  "rules": [
+    {"scope": "comment", "match": "//.*"},
+    {"scope": "comment", "begin": "/\\*", "end": "\\*/"},
+    {"scope": "string", "begin": "`", "end": "`", "escape": "\\\\"},
+    {"scope": "string", "begin": "\"", "end": "\"", "escape": "\\\\", "multiline": false},
+    {"scope": "string", "begin": "'", "end": "'", "escape": "\\\\", "multiline": false},
+    {"scope": "keyword", "words": ["as", "async", "await", "break", "case", "catch", "class", "const", "continue", "debugger", "default", "delete", "do", "else", "export", "extends", "finally", "for", "from", "function", "get", "if", "import", "in", "instanceof", "let", "new", "of", "return", "set", "static", "switch", "throw", "try", "typeof", "var", "void", "while", "with", "yield"]},
+    {"scope": "constant", "words": ["true", "false", "null", "undefined", "NaN", "Infinity", "this", "super", "arguments", "globalThis"]},
+    {"scope": "type", "match": "\\b[A-Z]\\w*\\b"},
+    {"scope": "number", "match": "\\b(?:0[xX][0-9a-fA-F_]+|0[bB][01_]+|\\d[\\d_]*(?:\\.\\d[\\d_]*)?(?:[eE][+-]?\\d+)?)\\b|\\b\\d+n\\b"},
+    {"scope": "function", "match": "\\b[A-Za-z_]\\w*(?=\\s*\\()"}
+  ]
+}
