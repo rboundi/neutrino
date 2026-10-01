@@ -39,7 +39,10 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSText
     /// The views of the text: one, or two while the window is split.
     private(set) var panes: [EditorPane]
     private var activeView: EditorTextView
-    private let split = NSSplitView()
+    /// Holds the panes: one filling it, or two of equal height with a line between them.
+    private let editorArea = NSView()
+    private let divider = NSBox()
+    private var paneConstraints: [NSLayoutConstraint] = []
     let findBar = FindBar()
     let resultsView = FindResultsView()
     let statusBar = StatusBar()
@@ -141,20 +144,8 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSText
     // MARK: Setup
 
     private func buildLayout(in window: NSWindow) {
-        split.isVertical = false
-        split.dividerStyle = .thin
-        split.addArrangedSubview(panes[0].view)
-
-        // A plain view around the split view takes whatever height the bars leave.
-        let editorArea = NSView()
-        split.translatesAutoresizingMaskIntoConstraints = false
-        editorArea.addSubview(split)
-        NSLayoutConstraint.activate([
-            split.leadingAnchor.constraint(equalTo: editorArea.leadingAnchor),
-            split.trailingAnchor.constraint(equalTo: editorArea.trailingAnchor),
-            split.topAnchor.constraint(equalTo: editorArea.topAnchor),
-            split.bottomAnchor.constraint(equalTo: editorArea.bottomAnchor),
-        ])
+        divider.boxType = .separator
+        layoutPanes()
 
         findBar.isHidden = true
         resultsView.isHidden = true
@@ -162,11 +153,8 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSText
         stack.orientation = .vertical
         stack.alignment = .leading
         stack.spacing = 0
-        // The bars keep their heights and the editor takes the rest.
-        stack.distribution = .fill
         stack.translatesAutoresizingMaskIntoConstraints = false
-        editorArea.setContentHuggingPriority(.init(1), for: .vertical)
-        editorArea.setContentCompressionResistancePriority(.init(1), for: .vertical)
+        editorArea.setContentHuggingPriority(.defaultLow, for: .vertical)
 
         let content = NSView()
         content.addSubview(stack)
@@ -181,6 +169,35 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSText
         }
         NSLayoutConstraint.activate(constraints)
         window.contentView = content
+    }
+
+    /// Puts the panes in the editor area. A split view would do this too, but it sizes its
+    /// parts by their own preferences and collapsed the text when the find bar opened.
+    private func layoutPanes() {
+        NSLayoutConstraint.deactivate(paneConstraints)
+        editorArea.subviews.forEach { $0.removeFromSuperview() }
+        let views = panes.map(\.view)
+        var constraints = [
+            views[0].topAnchor.constraint(equalTo: editorArea.topAnchor),
+            views[views.count - 1].bottomAnchor.constraint(equalTo: editorArea.bottomAnchor),
+        ]
+        for view in views + (views.count > 1 ? [divider] : []) {
+            view.translatesAutoresizingMaskIntoConstraints = false
+            editorArea.addSubview(view)
+            constraints += [
+                view.leadingAnchor.constraint(equalTo: editorArea.leadingAnchor),
+                view.trailingAnchor.constraint(equalTo: editorArea.trailingAnchor),
+            ]
+        }
+        if views.count > 1 {
+            constraints += [
+                divider.topAnchor.constraint(equalTo: views[0].bottomAnchor),
+                views[1].topAnchor.constraint(equalTo: divider.bottomAnchor),
+                views[1].heightAnchor.constraint(equalTo: views[0].heightAnchor),
+            ]
+        }
+        NSLayoutConstraint.activate(constraints)
+        paneConstraints = constraints
     }
 
     /// Connects a new pane to this window and gives it the current settings and syntax.
@@ -296,8 +313,8 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSText
             center.removeObserver(self, name: NSView.boundsDidChangeNotification, object: closing.scrollView.contentView)
             center.removeObserver(self, name: NSView.frameDidChangeNotification, object: closing.textView)
             closing.textView.delegate = nil
-            closing.view.removeFromSuperview()
             doc.textStorage.removeLayoutManager(closing.layoutManager)
+            layoutPanes()
             activeView = panes[0].textView
             window?.makeFirstResponder(activeView)
             return
@@ -305,9 +322,8 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSText
         let first = panes[0]
         let pane = EditorPane(storage: doc.textStorage)
         panes.append(pane)
-        split.addArrangedSubview(pane.view)
-        split.layoutSubtreeIfNeeded()
-        split.setPosition(split.bounds.height / 2, ofDividerAt: 0)
+        layoutPanes()
+        editorArea.layoutSubtreeIfNeeded()
         adopt(pane, document: doc)
         // The new half starts where the first one is.
         let caret = NSRange(location: first.textView.selectedRange().location, length: 0)
