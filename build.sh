@@ -41,8 +41,9 @@ sed -e "s/__VERSION__/$VERSION/" -e "s/__BUILD__/$BUILD/" Resources/Info.plist >
 cp Resources/AppIcon.icns "$APP/Contents/Resources/"
 cp Resources/neutrino "$APP/Contents/Resources/neutrino"
 chmod +x "$APP/Contents/Resources/neutrino"
-# The list of published syntaxes, so the app can offer one before it has been online.
+# The lists of published syntaxes and themes, so the app can offer them before it has been online.
 cp syntaxes/index.json "$APP/Contents/Resources/syntaxes.json"
+cp themes/index.json "$APP/Contents/Resources/themes.json"
 
 IDENTITY="${SIGN_IDENTITY:-$(security find-identity -v -p codesigning 2>/dev/null \
   | sed -n 's/.*"\(Developer ID Application: [^"]*\)".*/\1/p' | head -1)}"

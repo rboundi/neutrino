@@ -1,10 +1,11 @@
 {
   "id": "cpp",
   "name": "C++",
-  "version": 1,
+  "version": 2,
   "extensions": ["cpp", "cc", "cxx", "hpp", "hh", "hxx", "ino"],
   "lineComment": "//",
   "blockComment": ["/*", "*/"],
+  "symbols": ["^[A-Za-z_][\\w \\t*&:<>,]*?[ \\t*&]([A-Za-z_~][\\w:~]*)[ \\t]*\\([^;{}\\n]*\\)[ \\t]*(?:const[ \\t]*)?(?:noexcept[ \\t]*)?(?:override[ \\t]*)?\\{?[ \\t]*$", "^[ \\t]*(?:class|struct|enum(?:[ \\t]+class)?|union|namespace)[ \\t]+(\\w+)[^;\\n]*$"],
   "rules": [
     {"scope": "comment", "match": "//.*"},
     {"scope": "comment", "begin": "/\\*", "end": "\\*/"},

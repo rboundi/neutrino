@@ -1,0 +1,11 @@
+{
+  "themes": [
+    {"id": "dracula", "name": "Dracula", "version": 1, "dark": true},
+    {"id": "github-light", "name": "GitHub Light", "version": 1, "dark": false},
+    {"id": "monokai", "name": "Monokai", "version": 1, "dark": true},
+    {"id": "nord", "name": "Nord", "version": 1, "dark": true},
+    {"id": "one-dark", "name": "One Dark", "version": 1, "dark": true},
+    {"id": "solarized-dark", "name": "Solarized Dark", "version": 1, "dark": true},
+    {"id": "solarized-light", "name": "Solarized Light", "version": 1, "dark": false}
+  ]
+}

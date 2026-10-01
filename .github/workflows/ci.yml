@@ -19,8 +19,8 @@ jobs:
 
       - name: Syntax index is up to date
         run: |
-          scripts/make_syntax_index.py
-          git diff --exit-code syntaxes/index.json
+          scripts/make_index.py
+          git diff --exit-code syntaxes/index.json themes/index.json
 
       - name: Build app (universal)
         run: ./build.sh
@@ -30,5 +30,6 @@ jobs:
           test -x build/Neutrino.app/Contents/MacOS/Neutrino
           test -x build/Neutrino.app/Contents/Resources/neutrino
           test -f build/Neutrino.app/Contents/Resources/syntaxes.json
+          test -f build/Neutrino.app/Contents/Resources/themes.json
           lipo -archs build/Neutrino.app/Contents/MacOS/Neutrino | grep -q x86_64
           codesign --verify --deep --strict build/Neutrino.app

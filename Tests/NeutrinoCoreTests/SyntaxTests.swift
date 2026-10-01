@@ -47,7 +47,7 @@ final class SyntaxTests: XCTestCase {
         let infos = try files().map { try JSONDecoder().decode(SyntaxInfo.self, from: Data(contentsOf: $0)) }
         XCTAssertEqual(
             catalog.syntaxes.sorted { $0.id < $1.id }, infos.sorted { $0.id < $1.id },
-            "run scripts/make_syntax_index.py")
+            "run scripts/make_index.py")
         let extensions = infos.flatMap(\.extensions)
         XCTAssertEqual(extensions.count, Set(extensions).count, "an extension is claimed by two syntaxes")
     }

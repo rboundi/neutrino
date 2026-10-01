@@ -1,11 +1,12 @@
 {
   "id": "makefile",
   "name": "Makefile",
-  "version": 1,
+  "version": 2,
   "extensions": ["mk", "mak"],
   "filenames": ["Makefile", "makefile", "GNUmakefile"],
   "lineComment": "#",
   "indentWithTabs": true,
+  "symbols": ["^([^\\s#:=.][^:=#\\n]*):(?!=)"],
   "rules": [
     {"scope": "comment", "match": "#.*"},
     {"scope": "keyword", "match": "^\\.[A-Z_]+(?=[ \\t]*:)"},

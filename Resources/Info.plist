@@ -36,6 +36,17 @@
 	<string>rboundi/neutrino</string>
 	<key>NSHumanReadableCopyright</key>
 	<string>© 2026 movin'App. MIT License.</string>
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleURLName</key>
+			<string>com.movinapp.neutrino.macos</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>neutrino</string>
+			</array>
+		</dict>
+	</array>
 	<key>CFBundleDocumentTypes</key>
 	<array>
 		<dict>

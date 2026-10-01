@@ -1,11 +1,12 @@
 {
   "id": "shell",
   "name": "Shell",
-  "version": 1,
+  "version": 2,
   "extensions": ["sh", "bash", "zsh", "ksh", "command"],
   "filenames": [".zshrc", ".bashrc", ".bash_profile", ".zprofile", ".profile", ".zshenv"],
   "firstLine": "^#!.*\\b(?:ba|z|k|da)?sh\\b",
   "lineComment": "#",
+  "symbols": ["^[ \\t]*(?:function[ \\t]+)?([\\w-]+)[ \\t]*\\(\\)", "^[ \\t]*function[ \\t]+([\\w-]+)[ \\t]*\\{"],
   "rules": [
     {"scope": "comment", "match": "(?<![\\w$\\\\{])#.*"},
     {"scope": "string", "begin": "\"", "end": "\"", "escape": "\\\\"},

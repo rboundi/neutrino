@@ -1,0 +1,30 @@
+{
+  "id": "dracula",
+  "name": "Dracula",
+  "version": 1,
+  "dark": true,
+  "background": "#282A36",
+  "text": "#F8F8F2",
+  "selection": "#44475A",
+  "currentLine": "#30323E",
+  "lineNumbers": "#6272A4",
+  "findMatch": "#7A6A2A",
+  "scopes": {
+    "comment": "#6272A4",
+    "string": "#F1FA8C",
+    "keyword": "#FF79C6",
+    "number": "#BD93F9",
+    "type": "#8BE9FD",
+    "function": "#50FA7B",
+    "constant": "#BD93F9",
+    "variable": "#FFB86C",
+    "tag": "#FF79C6",
+    "attribute": "#50FA7B",
+    "operator": "#FF79C6",
+    "heading": "#BD93F9",
+    "link": "#8BE9FD",
+    "emphasis": "#FFB86C",
+    "inserted": "#50FA7B",
+    "deleted": "#FF5555"
+  }
+}

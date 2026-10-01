@@ -1,10 +1,11 @@
 {
   "id": "rust",
   "name": "Rust",
-  "version": 1,
+  "version": 2,
   "extensions": ["rs"],
   "lineComment": "//",
   "blockComment": ["/*", "*/"],
+  "symbols": ["^[ \\t]*(?:pub(?:\\([^)]*\\))?[ \\t]+)?(?:async[ \\t]+)?(?:unsafe[ \\t]+)?(?:fn|struct|enum|trait|mod)[ \\t]+(\\w+)", "^[ \\t]*(impl(?:<[^>\\n]*>)?[ \\t]+[^{\\n]+?)[ \\t]*\\{"],
   "rules": [
     {"scope": "comment", "match": "//.*"},
     {"scope": "comment", "begin": "/\\*", "end": "\\*/"},

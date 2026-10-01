@@ -61,6 +61,9 @@ public struct SyntaxDefinition: Codable {
     public var indentWithTabs: Bool?
     /// For languages where a line ending in a colon opens a block, such as Python.
     public var indentAfterColon: Bool?
+    /// Regular expressions that find the names listed in the symbol menu: functions, classes,
+    /// headings. The first capture group is the name; without one, the whole match is.
+    public var symbols: [String]?
     public var rules: [SyntaxRule]
 
     public var info: SyntaxInfo {
@@ -78,9 +81,21 @@ public struct SyntaxError: Error, LocalizedError {
     }
 }
 
-public struct Token {
+public struct Token: Equatable {
     public var range: NSRange
     public var scope: Scope
+
+    public init(range: NSRange, scope: Scope) {
+        self.range = range
+        self.scope = scope
+    }
+}
+
+/// A named place in a document, for the symbol menu.
+public struct Symbol: Equatable {
+    public var name: String
+    /// Where the name is in the text.
+    public var range: NSRange
 }
 
 /// A syntax file turned into one regular expression that finds every token in a single pass.
@@ -89,6 +104,12 @@ public final class CompiledSyntax {
     private let regex: NSRegularExpression
     /// Capture group number and scope for each rule, in rule order.
     private let groups: [(group: Int, scope: Scope)]
+    private let symbolPatterns: [NSRegularExpression]
+
+    /// Lets a scan that starts in the middle of the text see what comes before it.
+    private static let matching: NSRegularExpression.MatchingOptions = [
+        .reportProgress, .withTransparentBounds, .withoutAnchoringBounds,
+    ]
 
     public convenience init(data: Data) throws {
         let definition: SyntaxDefinition
@@ -128,6 +149,13 @@ public final class CompiledSyntax {
         }
         self.definition = definition
         self.groups = groups
+        symbolPatterns = try (definition.symbols ?? []).enumerated().map { index, pattern in
+            do {
+                return try NSRegularExpression(pattern: pattern, options: options)
+            } catch {
+                throw SyntaxError(message: "Symbol pattern \(index + 1) is not a valid regular expression.")
+            }
+        }
         do {
             regex = try NSRegularExpression(pattern: parts.joined(separator: "|"), options: options)
         } catch {
@@ -138,23 +166,117 @@ public final class CompiledSyntax {
     /// Tokens in `range`, in order. They never overlap.
     public func tokenize(_ string: NSString, range: NSRange? = nil, isCancelled: () -> Bool = { false }) -> [Token] {
         var tokens: [Token] = []
+        scan(string, range: range ?? NSRange(location: 0, length: string.length), isCancelled: isCancelled) { token in
+            tokens.append(token)
+            return true
+        }
+        return tokens
+    }
+
+    /// Tokens after an edit, reusing what the last scan found.
+    ///
+    /// `previous` holds the old tokens with their positions already moved to fit the new text,
+    /// and `edited` is the part of the new text that changed. Scanning restarts a line before the
+    /// change and stops as soon as it produces a token the old scan also had after the change;
+    /// from there on the two scans are bound to agree, so the old tokens are kept.
+    public func retokenize(
+        _ string: NSString, previous: [Token], edited: NSRange, isCancelled: () -> Bool = { false }
+    ) -> [Token] {
+        let length = string.length
+        let editStart = min(edited.location, length)
+        let editEnd = min(NSMaxRange(edited), length)
+
+        // A rule can look ahead past a line break, so begin one line early.
+        var restart = string.lineRange(for: NSRange(location: editStart, length: 0)).location
+        if restart > 0 {
+            restart = string.lineRange(for: NSRange(location: restart - 1, length: 0)).location
+        }
+        // A token that reaches across that point has to be rescanned from its own start.
+        var keep = Self.firstIndex(in: previous, endingAfter: restart)
+        if keep < previous.count, previous[keep].range.location < restart {
+            restart = previous[keep].range.location
+            keep = Self.firstIndex(in: previous, endingAfter: restart)
+        }
+
+        var tokens = Array(previous[..<keep])
+        var old = keep
+        scan(string, range: NSRange(location: restart, length: length - restart), isCancelled: isCancelled) { token in
+            if token.range.location >= editEnd {
+                while old < previous.count, previous[old].range.location < token.range.location { old += 1 }
+                if old < previous.count, previous[old] == token {
+                    tokens.append(contentsOf: previous[old...])
+                    return false
+                }
+            }
+            tokens.append(token)
+            return true
+        }
+        return tokens
+    }
+
+    /// Moves tokens to fit the text after an edit, ready for `retokenize`. `newRange` is the
+    /// edited range in the text as it is now and `delta` the change in length.
+    public static func shift(_ tokens: inout [Token], edited newRange: NSRange, delta: Int) {
+        let location = newRange.location
+        let oldEnd = location + newRange.length - delta
+        var index = firstIndex(in: tokens, endingAfter: location)
+        // A token around the edit stretches with it, so the next scan knows to start from it.
+        if index < tokens.count, tokens[index].range.location < location {
+            tokens[index].range.length = max(tokens[index].range.length + delta, location - tokens[index].range.location)
+            index += 1
+        }
+        // Tokens that began inside the replaced text are gone.
+        var after = index
+        while after < tokens.count, tokens[after].range.location < oldEnd { after += 1 }
+        tokens.removeSubrange(index..<after)
+        if delta != 0 {
+            for i in index..<tokens.count { tokens[i].range.location += delta }
+        }
+    }
+
+    /// Index of the first token that ends after `location`.
+    static func firstIndex(in tokens: [Token], endingAfter location: Int) -> Int {
+        var low = 0
+        var high = tokens.count
+        while low < high {
+            let mid = (low + high) / 2
+            if NSMaxRange(tokens[mid].range) > location { high = mid } else { low = mid + 1 }
+        }
+        return low
+    }
+
+    private func scan(_ string: NSString, range: NSRange, isCancelled: () -> Bool, each: (Token) -> Bool) {
         var count = 0
-        let range = range ?? NSRange(location: 0, length: string.length)
         // Progress reports arrive during a slow match too, so one bad rule can't run forever.
-        regex.enumerateMatches(in: string as String, options: [.reportProgress], range: range) { result, _, stop in
+        regex.enumerateMatches(in: string as String, options: Self.matching, range: range) { result, _, stop in
             guard let result else {
                 if isCancelled() { stop.pointee = true }
                 return
             }
             guard result.range.length > 0 else { return }
             for (group, scope) in groups where result.range(at: group).location != NSNotFound {
-                tokens.append(Token(range: result.range, scope: scope))
+                if !each(Token(range: result.range, scope: scope)) { stop.pointee = true }
                 break
             }
             count += 1
             if count % 2048 == 0 && isCancelled() { stop.pointee = true }
         }
-        return tokens
+    }
+
+    /// Names for the symbol menu, in the order they appear.
+    public func symbols(in string: NSString) -> [Symbol] {
+        var found: [Symbol] = []
+        let whole = NSRange(location: 0, length: string.length)
+        for pattern in symbolPatterns {
+            pattern.enumerateMatches(in: string as String, options: [], range: whole) { result, _, _ in
+                guard let result else { return }
+                var range = result.range
+                if result.numberOfRanges > 1, result.range(at: 1).location != NSNotFound { range = result.range(at: 1) }
+                let name = string.substring(with: range).trimmingCharacters(in: .whitespaces)
+                if !name.isEmpty { found.append(Symbol(name: String(name.prefix(100)), range: range)) }
+            }
+        }
+        return found.sorted { $0.range.location < $1.range.location }
     }
 
     private static func pattern(for rule: SyntaxRule, index: Int) throws -> String {

@@ -1,10 +1,11 @@
 {
   "id": "kotlin",
   "name": "Kotlin",
-  "version": 1,
+  "version": 2,
   "extensions": ["kt", "kts"],
   "lineComment": "//",
   "blockComment": ["/*", "*/"],
+  "symbols": ["^[ \\t]*(?:[\\w@]+[ \\t]+)*(?:class|interface|object)[ \\t]+(\\w+)", "^[ \\t]*(?:[\\w@]+[ \\t]+)*fun[ \\t]+(?:<[^>\\n]+>[ \\t]*)?([\\w.]+)"],
   "rules": [
     {"scope": "comment", "match": "//.*"},
     {"scope": "comment", "begin": "/\\*", "end": "\\*/"},

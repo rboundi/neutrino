@@ -1,10 +1,11 @@
 {
   "id": "typescript",
   "name": "TypeScript",
-  "version": 1,
+  "version": 2,
   "extensions": ["ts", "tsx", "mts", "cts"],
   "lineComment": "//",
   "blockComment": ["/*", "*/"],
+  "symbols": ["^[ \\t]*(?:export[ \\t]+)?(?:default[ \\t]+)?(?:declare[ \\t]+)?(?:abstract[ \\t]+)?(?:async[ \\t]+)?(?:function\\*?|class|interface|enum|type|namespace)[ \\t]+(\\w+)", "^[ \\t]*(?:export[ \\t]+)?(?:const|let|var)[ \\t]+(\\w+)[^=\\n]*=[ \\t]*(?:async[ \\t]*)?(?:\\([^)\\n]*\\)|\\w+)[^=\\n]*=>"],
   "rules": [
     {"scope": "comment", "match": "//.*"},
     {"scope": "comment", "begin": "/\\*", "end": "\\*/"},

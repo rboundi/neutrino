@@ -1,0 +1,30 @@
+{
+  "id": "nord",
+  "name": "Nord",
+  "version": 1,
+  "dark": true,
+  "background": "#2E3440",
+  "text": "#D8DEE9",
+  "selection": "#434C5E",
+  "currentLine": "#353B49",
+  "lineNumbers": "#4C566A",
+  "findMatch": "#6B5F2E",
+  "scopes": {
+    "comment": "#616E88",
+    "string": "#A3BE8C",
+    "keyword": "#81A1C1",
+    "number": "#B48EAD",
+    "type": "#8FBCBB",
+    "function": "#88C0D0",
+    "constant": "#B48EAD",
+    "variable": "#D8DEE9",
+    "tag": "#81A1C1",
+    "attribute": "#8FBCBB",
+    "operator": "#81A1C1",
+    "heading": "#88C0D0",
+    "link": "#88C0D0",
+    "emphasis": "#EBCB8B",
+    "inserted": "#A3BE8C",
+    "deleted": "#BF616A"
+  }
+}

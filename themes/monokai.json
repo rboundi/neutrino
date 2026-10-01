@@ -1,0 +1,30 @@
+{
+  "id": "monokai",
+  "name": "Monokai",
+  "version": 1,
+  "dark": true,
+  "background": "#272822",
+  "text": "#F8F8F2",
+  "selection": "#49483E",
+  "currentLine": "#2F302A",
+  "lineNumbers": "#75715E",
+  "findMatch": "#6E6A24",
+  "scopes": {
+    "comment": "#75715E",
+    "string": "#E6DB74",
+    "keyword": "#F92672",
+    "number": "#AE81FF",
+    "type": "#66D9EF",
+    "function": "#A6E22E",
+    "constant": "#AE81FF",
+    "variable": "#FD971F",
+    "tag": "#F92672",
+    "attribute": "#A6E22E",
+    "operator": "#F92672",
+    "heading": "#A6E22E",
+    "link": "#66D9EF",
+    "emphasis": "#FD971F",
+    "inserted": "#A6E22E",
+    "deleted": "#F92672"
+  }
+}

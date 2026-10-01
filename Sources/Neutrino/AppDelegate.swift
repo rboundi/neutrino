@@ -8,7 +8,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
 
     func applicationWillFinishLaunching(_ notification: Notification) {
         Prefs.register()
-        NSApp.appearance = Prefs.appearanceMode.nsAppearance
+        NSApp.appearance = ThemeStore.shared.appearance
+        NSAppleEventManager.shared().setEventHandler(
+            self, andSelector: #selector(handleURL(_:reply:)), forEventClass: AEEventClass(kInternetEventClass),
+            andEventID: AEEventID(kAEGetURL))
+        NotificationCenter.default.addObserver(
+            self, selector: #selector(defaultsChanged), name: ThemeStore.didChange, object: nil)
         NSApp.mainMenu = MainMenu.build(delegate: self)
         NSWindow.allowsAutomaticWindowTabbing = true
         NotificationCenter.default.addObserver(
@@ -51,7 +56,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
 
     @objc private func defaultsChanged() {
         DispatchQueue.main.async {
-            let appearance = Prefs.appearanceMode.nsAppearance
+            let appearance = ThemeStore.shared.appearance
             if NSApp.appearance != appearance { NSApp.appearance = appearance }
         }
     }
@@ -68,9 +73,39 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
     }
 
     @objc func changeFontSize(_ sender: NSMenuItem) {
-        let defaults = UserDefaults.standard
-        let size = sender.tag == 0 ? Prefs.defaultFontSize : defaults.double(forKey: Prefs.fontSize) + Double(sender.tag)
-        defaults.set(min(max(size, 8), 48), forKey: Prefs.fontSize)
+        Prefs.changeFontSize(by: Double(sender.tag))
+    }
+
+    /// ⌘1 to ⌘8 show that tab of the front window; ⌘9 shows the last one.
+    @objc func showTab(_ sender: NSMenuItem) {
+        guard let window = NSApp.keyWindow ?? NSApp.mainWindow, let tabs = window.tabGroup?.windows, !tabs.isEmpty
+        else { return }
+        let index = sender.tag == 9 ? tabs.count - 1 : sender.tag - 1
+        guard tabs.indices.contains(index) else { return NSSound.beep() }
+        window.tabGroup?.selectedWindow = tabs[index]
+    }
+
+    /// Handles neutrino://open?file=/path&line=12&column=3, which the `neutrino` command sends
+    /// for `neutrino file:12:3`.
+    @objc private func handleURL(_ event: NSAppleEventDescriptor, reply: NSAppleEventDescriptor) {
+        guard let string = event.paramDescriptor(forKeyword: keyDirectObject)?.stringValue,
+            let components = URLComponents(string: string), components.scheme == "neutrino",
+            components.host == "open"
+        else { return }
+        var values: [String: String] = [:]
+        for item in components.queryItems ?? [] { values[item.name] = item.value }
+        guard let path = values["file"], path.hasPrefix("/") else { return }
+        let line = Int(values["line"] ?? "")
+        let column = Int(values["column"] ?? "") ?? 1
+        NSDocumentController.shared.openDocument(withContentsOf: URL(fileURLWithPath: path), display: true) { document, _, error in
+            if let error {
+                NSApp.presentError(error)
+                return
+            }
+            if let line, let editor = (document as? Document)?.editor {
+                editor.go(toLine: line, column: column)
+            }
+        }
     }
 
     @objc func openRecent(_ sender: NSMenuItem) {

@@ -1,0 +1,30 @@
+{
+  "id": "one-dark",
+  "name": "One Dark",
+  "version": 1,
+  "dark": true,
+  "background": "#282C34",
+  "text": "#ABB2BF",
+  "selection": "#3E4451",
+  "currentLine": "#2C313A",
+  "lineNumbers": "#5C6370",
+  "findMatch": "#6B5A26",
+  "scopes": {
+    "comment": "#5C6370",
+    "string": "#98C379",
+    "keyword": "#C678DD",
+    "number": "#D19A66",
+    "type": "#E5C07B",
+    "function": "#61AFEF",
+    "constant": "#D19A66",
+    "variable": "#E06C75",
+    "tag": "#E06C75",
+    "attribute": "#D19A66",
+    "operator": "#56B6C2",
+    "heading": "#E06C75",
+    "link": "#61AFEF",
+    "emphasis": "#E5C07B",
+    "inserted": "#98C379",
+    "deleted": "#E06C75"
+  }
+}

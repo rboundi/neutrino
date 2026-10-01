@@ -1,10 +1,11 @@
 {
   "id": "lua",
   "name": "Lua",
-  "version": 1,
+  "version": 2,
   "extensions": ["lua"],
   "lineComment": "--",
   "blockComment": ["--[[", "]]"],
+  "symbols": ["^[ \\t]*(?:local[ \\t]+)?function[ \\t]+([\\w.:]+)"],
   "rules": [
     {"scope": "comment", "match": "--\\[(?<ceq>=*)\\[[\\s\\S]*?(?:\\]\\k<ceq>\\]|\\z)"},
     {"scope": "comment", "match": "--.*"},

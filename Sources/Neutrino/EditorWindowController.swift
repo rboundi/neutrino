@@ -40,11 +40,17 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSText
     private let layoutManager = EditorLayoutManager()
     private let scrollView = NSScrollView()
     private let gutter = GutterView()
-    private let statusBar = StatusBar()
+    let statusBar = StatusBar()
     private var gutterWidth: NSLayoutConstraint!
     private var style = EditorStyle.current
 
-    private var tokens: [Token] = []
+    private(set) var tokens: [Token] = []
+    /// False until the first full scan with the current syntax has finished.
+    private var tokensAreValid = false
+    /// The part of the text edited since the last finished scan: where it starts, and how far
+    /// its end is from the end of the text, which stays true while more edits arrive.
+    private var editedStart: Int?
+    private var editedTail = 0
     private let tokenGeneration = Generation()
     private var decorated = NSRange(location: 0, length: 0)
     private var editPending = false
@@ -74,6 +80,9 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSText
 
     /// The text without the copy that `NSTextView.string` makes.
     var text: NSMutableString { textView.textStorage!.mutableString }
+
+    /// The text for reading.
+    var readText: NSString { text }
 
     init(document: Document) {
         let container = NSTextContainer(size: NSSize(width: 0, height: CGFloat.greatestFiniteMagnitude))
@@ -116,7 +125,10 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSText
         center.addObserver(self, selector: #selector(formatChanged), name: SyntaxStore.didChange, object: nil)
         center.addObserver(
             self, selector: #selector(defaultsChanged), name: UserDefaults.didChangeNotification, object: nil)
+        center.addObserver(self, selector: #selector(themeChanged), name: ThemeStore.didChange, object: nil)
 
+        textView.isCode = { [weak self] index in self?.isCode(at: index) ?? true }
+        style = document.style
         apply(style, initial: true)
         adoptSyntax(of: document)
         statusBar.update()
@@ -205,7 +217,7 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSText
     @objc private func defaultsChanged() {
         DispatchQueue.main.async { [weak self] in
             guard let self else { return }
-            let new = EditorStyle.current
+            let new = self.doc?.style ?? EditorStyle.current
             if new != self.style { self.apply(new, initial: false) }
         }
     }
@@ -227,13 +239,38 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSText
         if initial || old.wrapLines != new.wrapLines {
             applyWrap(new.wrapLines)
         }
+        if initial || old.theme != new.theme {
+            applyTheme(recolourText: !initial)
+        }
         gutter.isHidden = !new.lineNumbers
         updateGutterWidth()
         layoutManager.showsInvisibles = new.showInvisibles
+        statusBar.update()
         decorated.length = 0
         textView.needsDisplay = true
         gutter.needsDisplay = true
         decorateVisible()
+    }
+
+    @objc private func themeChanged() {
+        applyTheme(recolourText: true)
+        decorated.length = 0
+        decorateVisible()
+    }
+
+    /// Takes the colours of the theme in use. Syntax colours are looked up again when the
+    /// visible text is next decorated.
+    private func applyTheme(recolourText: Bool) {
+        textView.backgroundColor = Theme.background
+        textView.insertionPointColor = Theme.text
+        textView.selectedTextAttributes = [.backgroundColor: Theme.selection]
+        scrollView.backgroundColor = Theme.background
+        if recolourText, let storage = textView.textStorage {
+            storage.addAttribute(.foregroundColor, value: Theme.text, range: NSRange(location: 0, length: storage.length))
+            textView.typingAttributes = style.textAttributes
+        }
+        textView.needsDisplay = true
+        gutter.needsDisplay = true
     }
 
     private func applyWrap(_ wrap: Bool) {
@@ -274,6 +311,8 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSText
         textView.indentWithTabs = definition?.indentWithTabs == true
         textView.indentAfterColon = definition?.indentAfterColon == true
         tokens = []
+        tokensAreValid = false
+        editedStart = nil
         highlightTimedOut = false
         layoutManager.removeTemporaryAttribute(
             .foregroundColor, forCharacterRange: NSRange(location: 0, length: document.textStorage.length))
@@ -285,6 +324,7 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSText
         let generation = tokenGeneration.next()
         let length = document.textStorage.length
         guard let syntax = document.syntax, !highlightTimedOut, length > 0, length <= Self.highlightLimit else {
+            tokensAreValid = false
             if !tokens.isEmpty {
                 tokens = []
                 decorateVisible(force: true)
@@ -294,13 +334,24 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSText
         let delay = length > Self.debounceLimit ? 0.2 : 0
         after(delay) { [weak self, weak document] in
             guard let self, let document, self.tokenGeneration.isCurrent(generation) else { return }
-            let snapshot = Unchecked(value: document.textStorage.mutableString.copy() as! NSString)
+            let snapshot = Unchecked(value: document.snapshotText())
+            // After the first scan, only the edited part is scanned again.
+            let previous = self.tokensAreValid ? self.tokens : nil
+            let length = snapshot.value.length
+            let start = min(self.editedStart ?? 0, length)
+            let edited = NSRange(location: start, length: max(length - self.editedTail - start, 0))
             self.workQueue.async {
                 let deadline = Date().addingTimeInterval(Self.highlightTimeout)
                 var timedOut = false
-                var tokens = syntax.tokenize(snapshot.value) {
+                let cancelled = {
                     timedOut = Date() > deadline
                     return timedOut || !self.tokenGeneration.isCurrent(generation)
+                }
+                var tokens: [Token]
+                if let previous {
+                    tokens = syntax.retokenize(snapshot.value, previous: previous, edited: edited, isCancelled: cancelled)
+                } else {
+                    tokens = syntax.tokenize(snapshot.value, isCancelled: cancelled)
                 }
                 if timedOut { tokens = [] }
                 let gaveUp = timedOut
@@ -308,10 +359,19 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSText
                     guard self.tokenGeneration.isCurrent(generation) else { return }
                     self.highlightTimedOut = gaveUp
                     self.tokens = tokens
+                    self.tokensAreValid = !gaveUp
+                    self.editedStart = nil
                     self.decorateVisible(force: true)
                 }
             }
         }
+    }
+
+    /// Whether the character is code, as opposed to part of a string or a comment.
+    private func isCode(at index: Int) -> Bool {
+        let found = Self.firstIndex(in: tokens, endingAfter: index) { $0.range }
+        guard found < tokens.count, tokens[found].range.location <= index else { return true }
+        return tokens[found].scope != .comment && tokens[found].scope != .string
     }
 
     func after(_ delay: Double, _ work: @escaping () -> Void) {
@@ -374,18 +434,18 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSText
     /// so this only fixes up offsets; the visible work happens right after.
     func textDidEdit(newRange: NSRange, delta: Int) {
         let oldEnd = newRange.location + newRange.length - delta
-        var index = Self.firstIndex(in: tokens, endingAfter: newRange.location) { $0.range }
-        while index < tokens.count {
-            if tokens[index].range.location >= oldEnd {
-                tokens[index].range.location += delta
-            } else {
-                // A token touched by the edit stretches with it until the next scan.
-                tokens[index].range.length = max(0, tokens[index].range.length + delta)
-            }
-            index += 1
+        CompiledSyntax.shift(&tokens, edited: newRange, delta: delta)
+        let tail = text.length - NSMaxRange(newRange)
+        if let start = editedStart {
+            editedStart = min(start, newRange.location)
+            editedTail = min(editedTail, tail)
+        } else {
+            editedStart = newRange.location
+            editedTail = tail
         }
+
         matchesAreCurrent = false
-        index = Self.firstIndex(in: matches, endingAfter: newRange.location) { $0 }
+        let index = Self.firstIndex(in: matches, endingAfter: newRange.location) { $0 }
         let firstAfter = matches[index...].firstIndex { $0.location >= oldEnd } ?? matches.count
         matches.removeSubrange(index..<firstAfter)
         for i in index..<matches.count { matches[i].location += delta }
@@ -419,10 +479,15 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSText
 
     @objc private func formatChanged() {
         statusBar.update()
+        guard let doc else { return }
+        // The document may have picked up an .editorconfig after being saved under a new name.
+        let new = doc.style
+        if new != style { apply(new, initial: false) }
     }
 
     func textViewDidChangeSelection(_ notification: Notification) {
         textView.updateCurrentLine()
+        textView.updateBracketMatch()
         gutter.needsDisplay = true
         updatePosition()
         if !findBar.isHidden { updateFindStatus() }
@@ -433,7 +498,9 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSText
         let selection = textView.selectedRange()
         let line = index.line(at: selection.location)
         var label = "Line \(line + 1), Column \(selection.location - index.start(ofLine: line) + 1)"
-        if selection.length > 0 {
+        if textView.cursorCount > 1 {
+            label = "\(textView.cursorCount) cursors"
+        } else if selection.length > 0 {
             let lines = index.line(at: NSMaxRange(selection)) - line + 1
             label += lines > 1 ? "  (\(selection.length) characters, \(lines) lines selected)"
                 : "  (\(selection.length) selected)"
@@ -460,14 +527,15 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSText
     /// Applies "trim trailing whitespace" and "end with a newline" as ordinary undoable edits.
     func tidyBeforeSaving() {
         let defaults = UserDefaults.standard
-        if defaults.bool(forKey: Prefs.trimTrailingWhitespace),
+        let config = doc?.editorConfig ?? EditorConfig()
+        if config.trimTrailingWhitespace ?? defaults.bool(forKey: Prefs.trimTrailingWhitespace),
             let query = try? SearchQuery(pattern: "[ \\t]+$", options: SearchOptions(regex: true)),
             let result = query.replaceAll(in: text, with: Replacement(template: "", isRegex: false)) {
             let caret = textView.selectedRange().location
             textView.replace(result.range, with: result.text)
             textView.setSelectedRange(NSRange(location: min(caret, text.length), length: 0))
         }
-        if defaults.bool(forKey: Prefs.ensureFinalNewline), text.length > 0,
+        if config.insertFinalNewline ?? defaults.bool(forKey: Prefs.ensureFinalNewline), text.length > 0,
             text.character(at: text.length - 1) != 0x0A {
             let selection = textView.selectedRange()
             textView.replace(NSRange(location: text.length, length: 0), with: "\n")
@@ -489,17 +557,22 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSText
         alert.addButton(withTitle: "Cancel")
         alert.window.initialFirstResponder = field
         alert.beginSheetModal(for: window) { [weak self] response in
-            guard let self, response == .alertFirstButtonReturn, let index = self.doc?.lineIndex else { return }
+            guard let self, response == .alertFirstButtonReturn else { return }
             let parts = field.stringValue.split(whereSeparator: { !$0.isNumber }).compactMap { Int($0) }
-            guard let line = parts.first, line >= 1 else { return }
-            let target = min(line, index.count) - 1
-            let start = index.start(ofLine: target)
-            let lineEnd = target + 1 < index.count ? index.start(ofLine: target + 1) - 1 : self.text.length
-            let column = parts.count > 1 ? max(parts[1], 1) - 1 : 0
-            let range = NSRange(location: min(start + column, lineEnd), length: 0)
-            self.textView.setSelectedRange(range)
-            self.textView.scrollRangeToVisible(range)
-            self.window?.makeFirstResponder(self.textView)
+            guard let line = parts.first else { return }
+            self.go(toLine: line, column: parts.count > 1 ? parts[1] : 1)
         }
+    }
+
+    /// Puts the caret at a line and column, both counted from 1.
+    func go(toLine line: Int, column: Int = 1) {
+        guard let index = doc?.lineIndex, line >= 1 else { return }
+        let target = min(line, index.count) - 1
+        let start = index.start(ofLine: target)
+        let lineEnd = target + 1 < index.count ? index.start(ofLine: target + 1) - 1 : text.length
+        let range = NSRange(location: min(start + max(column, 1) - 1, lineEnd), length: 0)
+        textView.setSelectedRange(range)
+        textView.scrollRangeToVisible(range)
+        window?.makeFirstResponder(textView)
     }
 }

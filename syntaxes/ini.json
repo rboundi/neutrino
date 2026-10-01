@@ -1,11 +1,12 @@
 {
   "id": "ini",
   "name": "INI",
-  "version": 1,
+  "version": 2,
   "extensions": ["ini", "cfg", "conf", "properties", "desktop"],
   "filenames": [".editorconfig", ".gitconfig", ".npmrc"],
   "lineComment": "#",
   "caseInsensitive": true,
+  "symbols": ["^[ \\t]*\\[([^\\]\\n]+)\\]"],
   "rules": [
     {"scope": "comment", "match": "^[ \\t]*[;#].*"},
     {"scope": "heading", "match": "^[ \\t]*\\[[^\\]\\n]*\\]"},

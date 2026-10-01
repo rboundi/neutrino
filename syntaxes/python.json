@@ -1,12 +1,13 @@
 {
   "id": "python",
   "name": "Python",
-  "version": 2,
+  "version": 3,
   "extensions": ["py", "pyw", "pyi"],
   "filenames": ["SConstruct", "wscript"],
   "firstLine": "^#!.*\\bpython",
   "lineComment": "#",
   "indentAfterColon": true,
+  "symbols": ["^[ \\t]*(?:async[ \\t]+)?(?:def|class)[ \\t]+(\\w+)"],
   "rules": [
     {"scope": "comment", "match": "#.*"},
     {"scope": "string", "begin": "(?i:\\b[rbfu]{1,2})?\"\"\"", "end": "\"\"\"", "escape": "\\\\"},

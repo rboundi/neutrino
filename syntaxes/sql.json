@@ -1,11 +1,12 @@
 {
   "id": "sql",
   "name": "SQL",
-  "version": 1,
+  "version": 2,
   "extensions": ["sql"],
   "lineComment": "--",
   "blockComment": ["/*", "*/"],
   "caseInsensitive": true,
+  "symbols": ["^[ \\t]*create[ \\t]+(?:or[ \\t]+replace[ \\t]+)?(?:temp(?:orary)?[ \\t]+)?(?:unique[ \\t]+)?(?:materialized[ \\t]+view|table|view|index|function|procedure|trigger|type)[ \\t]+(?:if[ \\t]+not[ \\t]+exists[ \\t]+)?([\\w.\\\"]+)"],
   "rules": [
     {"scope": "comment", "match": "--.*"},
     {"scope": "comment", "begin": "/\\*", "end": "\\*/"},

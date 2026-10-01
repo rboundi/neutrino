@@ -1,10 +1,11 @@
 {
   "id": "swift",
   "name": "Swift",
-  "version": 1,
+  "version": 2,
   "extensions": ["swift"],
   "lineComment": "//",
   "blockComment": ["/*", "*/"],
+  "symbols": ["^[ \\t]*(?:(?:public|private|fileprivate|internal|open|final|static|class|override|mutating|nonisolated|@\\w+)[ \\t]+)*(?:func|class|struct|enum|protocol|extension|actor)[ \\t]+([\\w.]+)", "^[ \\t]*// MARK: -? ?(.+)$"],
   "rules": [
     {"scope": "comment", "match": "//.*"},
     {"scope": "comment", "begin": "/\\*", "end": "\\*/"},

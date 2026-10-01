@@ -6,6 +6,9 @@ final class StatusBar: NSView, NSMenuDelegate {
     weak var editor: EditorWindowController?
 
     private let position = NSTextField(labelWithString: "")
+    private let sizeLabel = NSTextField(labelWithString: "")
+    private let symbols = StatusBar.popup()
+    private var symbolList: [Symbol] = []
     private let syntax = StatusBar.popup()
     private let lineEnding = StatusBar.popup()
     private let encoding = StatusBar.popup()
@@ -19,11 +22,24 @@ final class StatusBar: NSView, NSMenuDelegate {
         lineEnding.toolTip = "Line endings"
         encoding.toolTip = "Encoding"
 
-        let popups = NSStackView(views: [syntax, lineEnding, encoding])
+        symbols.toolTip = "Symbols"
+        symbols.item(at: 0)?.title = "Symbols"
+        // Text size: smaller, the size in points, larger. The size chosen becomes the default.
+        let smaller = sizeButton("textformat.size.smaller", "Smaller text", -1)
+        let larger = sizeButton("textformat.size.larger", "Larger text", 1)
+        sizeLabel.font = .monospacedDigitSystemFont(ofSize: 11, weight: .regular)
+        sizeLabel.textColor = .secondaryLabelColor
+        sizeLabel.toolTip = "Text size. It is used for every document from now on."
+        let size = NSStackView(views: [smaller, sizeLabel, larger])
+        size.orientation = .horizontal
+        size.spacing = 2
+
+        let popups = NSStackView(views: [size, symbols, syntax, lineEnding, encoding])
+        popups.setCustomSpacing(10, after: size)
         popups.orientation = .horizontal
         popups.spacing = 4
         popups.translatesAutoresizingMaskIntoConstraints = false
-        for popup in [syntax, lineEnding, encoding] {
+        for popup in [symbols, syntax, lineEnding, encoding] {
             popup.menu?.delegate = self
         }
 
@@ -59,14 +75,32 @@ final class StatusBar: NSView, NSMenuDelegate {
         return popup
     }
 
+    private func sizeButton(_ symbol: String, _ label: String, _ step: Int) -> NSButton {
+        let image = NSImage(systemSymbolName: symbol, accessibilityDescription: label) ?? NSImage()
+        let button = NSButton(image: image, target: self, action: #selector(changeSize(_:)))
+        button.isBordered = false
+        button.controlSize = .small
+        button.tag = step
+        button.toolTip = label
+        button.setAccessibilityLabel(label)
+        return button
+    }
+
+    @objc private func changeSize(_ sender: NSButton) {
+        Prefs.changeFontSize(by: Double(sender.tag))
+    }
+
     func setPosition(_ text: String) {
         position.stringValue = text
     }
 
     /// Shows the document's current syntax, line endings and encoding.
     func update() {
+        sizeLabel.stringValue = "\(Int(EditorStyle.current.fontSize)) pt"
         guard let document = editor?.doc else { return }
         syntax.item(at: 0)?.title = document.syntax?.definition.name ?? "Plain Text"
+        symbols.isHidden = document.syntax?.definition.symbols?.isEmpty ?? true
+
         lineEnding.item(at: 0)?.title = document.lineEnding.label
         encoding.item(at: 0)?.title = TextCodec.name(of: document.encoding)
     }
@@ -84,7 +118,27 @@ final class StatusBar: NSView, NSMenuDelegate {
             item.state = on ? .on : .off
         }
 
-        if menu === syntax.menu {
+        if menu === symbols.menu {
+            symbolList = Array((editor?.symbols() ?? []).prefix(1500))
+            let text = editor?.readText
+            for (index, symbol) in symbolList.enumerated() {
+                let item = menu.addItem(withTitle: symbol.name, action: #selector(pickSymbol(_:)), keyEquivalent: "")
+                item.target = self
+                item.tag = index
+                // Indented like the line it is on, so methods sit under their class.
+                if let text {
+                    let line = text.lineRange(for: NSRange(location: symbol.range.location, length: 0))
+                    var column = 0
+                    while column < line.length, [0x20, 0x09].contains(text.character(at: line.location + column)) {
+                        column += text.character(at: line.location + column) == 0x09 ? 4 : 1
+                    }
+                    item.indentationLevel = min(column / 2, 8)
+                }
+            }
+            if symbolList.isEmpty {
+                menu.addItem(withTitle: "No Symbols", action: nil, keyEquivalent: "").isEnabled = false
+            }
+        } else if menu === syntax.menu {
             let current = document.syntax?.definition.id
             add("Plain Text", #selector(pickSyntax(_:)), nil, on: current == nil)
             let installed = SyntaxStore.shared.installed
@@ -118,6 +172,16 @@ final class StatusBar: NSView, NSMenuDelegate {
         }
     }
 
+    func openSymbols() {
+        guard !symbols.isHidden else { return NSSound.beep() }
+        symbols.performClick(nil)
+    }
+
+    @objc private func pickSymbol(_ sender: NSMenuItem) {
+        guard symbolList.indices.contains(sender.tag) else { return }
+        editor?.reveal(symbolList[sender.tag])
+    }
+
     @objc private func pickSyntax(_ sender: NSMenuItem) {
         editor?.doc?.setSyntax(id: sender.representedObject as? String)
     }
@@ -126,7 +190,7 @@ final class StatusBar: NSView, NSMenuDelegate {
         guard let id = sender.representedObject as? String,
             let info = SyntaxStore.shared.catalog.first(where: { $0.id == id })
         else { return }
-        SyntaxStore.shared.install(info) { error in
+        SyntaxStore.shared.files.install(id: info.id) { error in
             guard let error else { return }
             let alert = NSAlert()
             alert.messageText = "Couldn't install the \(info.name) syntax"

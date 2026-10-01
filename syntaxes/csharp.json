@@ -1,10 +1,11 @@
 {
   "id": "csharp",
   "name": "C#",
-  "version": 1,
+  "version": 2,
   "extensions": ["cs", "csx"],
   "lineComment": "//",
   "blockComment": ["/*", "*/"],
+  "symbols": ["^[ \\t]*(?:[\\w\\[\\]]+[ \\t]+)*(?:class|interface|enum|record|struct|namespace)[ \\t]+([\\w.]+)", "^[ \\t]+(?:(?:public|private|protected|internal|static|virtual|override|abstract|async|sealed)[ \\t]+)+[\\w<>\\[\\],.? ]+[ \\t]+(\\w+)[ \\t]*\\("],
   "rules": [
     {"scope": "comment", "match": "//.*"},
     {"scope": "comment", "begin": "/\\*", "end": "\\*/"},

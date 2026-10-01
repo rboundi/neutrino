@@ -1,10 +1,11 @@
 {
   "id": "c",
   "name": "C",
-  "version": 1,
+  "version": 2,
   "extensions": ["c", "h"],
   "lineComment": "//",
   "blockComment": ["/*", "*/"],
+  "symbols": ["^[A-Za-z_][\\w \\t*]*?[ \\t*]([A-Za-z_]\\w*)[ \\t]*\\([^;{}\\n]*\\)[ \\t]*\\{?[ \\t]*$", "^(?:typedef[ \\t]+)?(?:struct|enum|union)[ \\t]+(\\w+)[ \\t]*\\{"],
   "rules": [
     {"scope": "comment", "match": "//.*"},
     {"scope": "comment", "begin": "/\\*", "end": "\\*/"},

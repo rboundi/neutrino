@@ -5,7 +5,7 @@ import SwiftUI
 /// The Settings window: one short page per toolbar tab.
 final class SettingsWindowController: NSWindowController {
     enum Tab: Int {
-        case general, editor, syntaxes
+        case general, editor, appearance, syntaxes
     }
 
     static let shared = SettingsWindowController()
@@ -17,6 +17,7 @@ final class SettingsWindowController: NSWindowController {
         let pages: [(String, String, AnyView)] = [
             ("General", "gearshape", AnyView(GeneralSettings())),
             ("Editor", "text.cursor", AnyView(EditorSettings())),
+            ("Appearance", "paintpalette", AnyView(AppearanceSettings())),
             ("Syntaxes", "curlybraces", AnyView(SyntaxSettings())),
         ]
         for (title, symbol, view) in pages {
@@ -56,19 +57,12 @@ private struct Page<Content: View>: View {
 }
 
 private struct GeneralSettings: View {
-    @AppStorage(Prefs.appearance) private var appearance = AppearanceMode.system.rawValue
     @AppStorage(Prefs.reopenDocuments) private var reopenDocuments = true
     @AppStorage(Prefs.autosave) private var autosave = true
     @AppStorage(Prefs.checkForUpdates) private var checkForUpdates = true
 
     var body: some View {
         Page {
-            Section {
-                Picker("Theme", selection: $appearance) {
-                    ForEach(AppearanceMode.allCases) { Text($0.label).tag($0.rawValue) }
-                }
-                .pickerStyle(.segmented)
-            }
             Section {
                 Toggle("Save changes automatically", isOn: $autosave)
                 Toggle("Reopen documents from last session", isOn: $reopenDocuments)
@@ -147,26 +141,33 @@ private struct EditorSettings: View {
     }
 }
 
-/// The syntax list shown in Settings, kept in step with `SyntaxStore`.
-private final class SyntaxListModel: ObservableObject {
-    struct Row: Identifiable {
-        var info: SyntaxInfo
-        var installedVersion: Int?
-        var published: Bool
-        var id: String { info.id }
-    }
+/// One line of a list of installable files: a syntax or a theme.
+private struct PackageRow: Identifiable {
+    var id: String
+    var name: String
+    var detail: String
+    var version: Int
+    var installedVersion: Int?
+    var published: Bool
+}
 
-    @Published var rows: [Row] = []
+/// A list of installable files shown in Settings, kept in step with its `PackageFolder`.
+private final class PackageListModel<Info: Codable & Identifiable>: ObservableObject where Info.ID == String {
+    @Published var rows: [PackageRow] = []
     @Published var busy: Set<String> = []
     @Published var message = ""
     @Published var refreshing = false
 
+    private let folder: PackageFolder<Info>
+    private let row: (Info) -> PackageRow
     private var observer: NSObjectProtocol?
 
-    init() {
+    init(_ folder: PackageFolder<Info>, row: @escaping (Info) -> PackageRow) {
+        self.folder = folder
+        self.row = row
         reload()
         observer = NotificationCenter.default.addObserver(
-            forName: SyntaxStore.didChange, object: nil, queue: .main
+            forName: folder.didChange, object: nil, queue: .main
         ) { [weak self] _ in self?.reload() }
     }
 
@@ -175,34 +176,41 @@ private final class SyntaxListModel: ObservableObject {
     }
 
     private func reload() {
-        let store = SyntaxStore.shared
-        let installed = Dictionary(uniqueKeysWithValues: store.installed.map { ($0.id, $0) })
-        var rows = store.catalog.map { Row(info: $0, installedVersion: installed[$0.id]?.version, published: true) }
-        let published = Set(store.catalog.map(\.id))
-        // Syntaxes added by hand that the repository doesn't have.
-        rows += store.installed.filter { !published.contains($0.id) }
-            .map { Row(info: $0, installedVersion: $0.version, published: false) }
-        self.rows = rows.sorted { $0.info.name.localizedCaseInsensitiveCompare($1.info.name) == .orderedAscending }
+        let installed = Dictionary(uniqueKeysWithValues: folder.installed.map { ($0.id, row($0)) })
+        var rows = folder.catalog.map { info -> PackageRow in
+            var entry = row(info)
+            entry.installedVersion = installed[info.id]?.version
+            return entry
+        }
+        let published = Set(rows.map(\.id))
+        // Files added by hand that the repository doesn't have.
+        rows += installed.values.filter { !published.contains($0.id) }.map { entry in
+            var entry = entry
+            entry.installedVersion = entry.version
+            entry.published = false
+            return entry
+        }
+        self.rows = rows.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
     }
 
     func refresh() {
         refreshing = true
-        SyntaxStore.shared.refreshCatalog { [weak self] error in
+        folder.refreshCatalog { [weak self] error in
             self?.refreshing = false
             self?.message = error.map { "Couldn't load the list: \($0.localizedDescription)" } ?? ""
         }
     }
 
-    func install(_ row: Row) {
+    func install(_ row: PackageRow) {
         busy.insert(row.id)
-        SyntaxStore.shared.install(row.info) { [weak self] error in
+        folder.install(id: row.id) { [weak self] error in
             self?.busy.remove(row.id)
-            self?.message = error.map { "Couldn't install \(row.info.name): \($0.localizedDescription)" } ?? ""
+            self?.message = error.map { "Couldn't install \(row.name): \($0.localizedDescription)" } ?? ""
         }
     }
 
-    func remove(_ row: Row) {
-        SyntaxStore.shared.remove(row.id)
+    func remove(_ row: PackageRow) {
+        folder.remove(row.id)
     }
 
     func installFromFile() {
@@ -213,17 +221,69 @@ private final class SyntaxListModel: ObservableObject {
         guard panel.runModal() == .OK else { return }
         for url in panel.urls {
             do {
-                try SyntaxStore.shared.install(fileAt: url)
+                try folder.install(fileAt: url)
                 message = ""
             } catch {
                 message = "\(url.lastPathComponent): \(error.localizedDescription)"
             }
         }
     }
+
+    func showFolder() {
+        folder.showFolder()
+    }
+}
+
+private struct PackageList<Info: Codable & Identifiable>: View where Info.ID == String {
+    @ObservedObject var model: PackageListModel<Info>
+    var height: CGFloat
+
+    var body: some View {
+        List(model.rows) { row in
+            HStack {
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(row.name)
+                    Text(row.published ? row.detail : "Added from a file" + (row.detail.isEmpty ? "" : "  ·  " + row.detail))
+                        .font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                }
+                Spacer()
+                if model.busy.contains(row.id) {
+                    ProgressView().controlSize(.small)
+                } else if let installed = row.installedVersion {
+                    if row.published && row.version > installed {
+                        Button("Update") { model.install(row) }
+                    }
+                    Button("Remove") { model.remove(row) }
+                } else {
+                    Button("Install") { model.install(row) }
+                }
+            }
+            .controlSize(.small)
+        }
+        .listStyle(.bordered(alternatesRowBackgrounds: true))
+        .frame(height: height)
+
+        if !model.message.isEmpty {
+            Text(model.message).font(.callout).foregroundStyle(.red)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        HStack {
+            Button("Refresh List") { model.refresh() }.disabled(model.refreshing)
+            if model.refreshing { ProgressView().controlSize(.small) }
+            Spacer()
+            Button("Install from File…") { model.installFromFile() }
+            Button("Show Folder") { model.showFolder() }
+        }
+    }
 }
 
 private struct SyntaxSettings: View {
-    @StateObject private var model = SyntaxListModel()
+    @StateObject private var model = PackageListModel(SyntaxStore.shared.files) { info in
+        let parts = info.extensions.prefix(8).map { ".\($0)" } + (info.filenames ?? []).prefix(3)
+        return PackageRow(
+            id: info.id, name: info.name, detail: parts.joined(separator: "  "), version: info.version,
+            published: true)
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -231,52 +291,52 @@ private struct SyntaxSettings: View {
                 .font(.callout)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
-
-            List(model.rows) { row in
-                HStack {
-                    VStack(alignment: .leading, spacing: 1) {
-                        Text(row.info.name)
-                        Text(detail(row)).font(.caption).foregroundStyle(.secondary).lineLimit(1)
-                    }
-                    Spacer()
-                    if model.busy.contains(row.id) {
-                        ProgressView().controlSize(.small)
-                    } else if let installed = row.installedVersion {
-                        if row.published && row.info.version > installed {
-                            Button("Update") { model.install(row) }
-                        }
-                        Button("Remove") { model.remove(row) }
-                    } else {
-                        Button("Install") { model.install(row) }
-                    }
-                }
-                .controlSize(.small)
-            }
-            .listStyle(.bordered(alternatesRowBackgrounds: true))
-            .frame(height: 300)
-
-            if !model.message.isEmpty {
-                Text(model.message).font(.callout).foregroundStyle(.red)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-            HStack {
-                Button("Refresh List") { model.refresh() }.disabled(model.refreshing)
-                if model.refreshing { ProgressView().controlSize(.small) }
-                Spacer()
-                Button("Install from File…") { model.installFromFile() }
-                Button("Show Folder") { SyntaxStore.shared.showFolder() }
-            }
+            PackageList(model: model, height: 300)
         }
         .padding(20)
         .frame(width: 480)
         .onAppear { model.refresh() }
     }
+}
 
-    private func detail(_ row: SyntaxListModel.Row) -> String {
-        var parts = row.info.extensions.prefix(8).map { ".\($0)" }
-        parts += (row.info.filenames ?? []).prefix(3)
-        var text = parts.joined(separator: "  ")
-        if !row.published { text = "Added from a file" + (text.isEmpty ? "" : "  ·  " + text) }
-        return text
+private struct AppearanceSettings: View {
+    @AppStorage(Prefs.appearance) private var appearance = AppearanceMode.system.rawValue
+    @AppStorage(Prefs.theme) private var theme = ""
+    @StateObject private var model = PackageListModel(ThemeStore.shared.files) { info in
+        PackageRow(
+            id: info.id, name: info.name, detail: info.dark ? "Dark" : "Light", version: info.version,
+            published: true)
+    }
+
+    private var installed: [PackageRow] {
+        model.rows.filter { $0.installedVersion != nil }
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Picker("Colours", selection: $theme) {
+                Text("Built in").tag("")
+                ForEach(installed) { Text($0.name).tag($0.id) }
+            }
+            Picker("Appearance", selection: $appearance) {
+                ForEach(AppearanceMode.allCases) { Text($0.label).tag($0.rawValue) }
+            }
+            .pickerStyle(.segmented)
+            .disabled(!theme.isEmpty)
+
+            Text("Themes are downloaded from GitHub when you install them. A theme sets the appearance itself.")
+                .font(.callout)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(.top, 6)
+            PackageList(model: model, height: 220)
+        }
+        .padding(20)
+        .frame(width: 480)
+        .onAppear { model.refresh() }
+        .onChange(of: installed.map(\.id)) { ids in
+            // The theme in use was removed.
+            if !theme.isEmpty && !ids.contains(theme) { theme = "" }
+        }
     }
 }

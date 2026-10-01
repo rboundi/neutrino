@@ -1,10 +1,11 @@
 {
   "id": "toml",
   "name": "TOML",
-  "version": 1,
+  "version": 2,
   "extensions": ["toml"],
   "filenames": ["Cargo.lock", "Pipfile", "uv.lock", "poetry.lock"],
   "lineComment": "#",
+  "symbols": ["^[ \\t]*\\[\\[?([^\\]\\n]+)\\]\\]?"],
   "rules": [
     {"scope": "comment", "match": "#.*"},
     {"scope": "heading", "match": "^[ \\t]*\\[\\[?[^\\]\\n]*\\]\\]?"},

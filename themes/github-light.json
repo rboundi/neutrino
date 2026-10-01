@@ -1,0 +1,30 @@
+{
+  "id": "github-light",
+  "name": "GitHub Light",
+  "version": 1,
+  "dark": false,
+  "background": "#FFFFFF",
+  "text": "#24292F",
+  "selection": "#B6E3FF",
+  "currentLine": "#F6F8FA",
+  "lineNumbers": "#8C959F",
+  "findMatch": "#FFF2A8",
+  "scopes": {
+    "comment": "#6E7781",
+    "string": "#0A3069",
+    "keyword": "#CF222E",
+    "number": "#0550AE",
+    "type": "#953800",
+    "function": "#8250DF",
+    "constant": "#0550AE",
+    "variable": "#953800",
+    "tag": "#116329",
+    "attribute": "#0550AE",
+    "operator": "#CF222E",
+    "heading": "#0550AE",
+    "link": "#0969DA",
+    "emphasis": "#953800",
+    "inserted": "#116329",
+    "deleted": "#82071E"
+  }
+}

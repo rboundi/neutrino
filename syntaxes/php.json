@@ -1,10 +1,11 @@
 {
   "id": "php",
   "name": "PHP",
-  "version": 1,
+  "version": 2,
   "extensions": ["php", "phtml"],
   "lineComment": "//",
   "blockComment": ["/*", "*/"],
+  "symbols": ["^[ \\t]*(?:(?:public|private|protected|static|abstract|final)[ \\t]+)*(?:function|class|interface|trait|enum)[ \\t]+&?(\\w+)"],
   "rules": [
     {"scope": "comment", "match": "//.*"},
     {"scope": "comment", "match": "#(?!\\[).*"},

@@ -7,7 +7,12 @@ final class Document: NSDocument, NSTextStorageDelegate {
     static let formatDidChange = Notification.Name("DocumentFormatDidChange")
     static let typeName = "public.data"
 
+    /// Opening a file this large asks first: the whole text is held in memory, several times over.
+    static let largeFileLimit = 150 << 20
+
     let textStorage = NSTextStorage()
+    /// What the folder's `.editorconfig` files say about this document.
+    private(set) var editorConfig = EditorConfig()
     private(set) var lineIndex = LineIndex()
     private(set) var encoding: String.Encoding = .utf8
     private(set) var hasBOM = false
@@ -30,6 +35,16 @@ final class Document: NSDocument, NSTextStorageDelegate {
 
     var editor: EditorWindowController? {
         windowControllers.first as? EditorWindowController
+    }
+
+    /// The editor settings for this document: the global ones with `.editorconfig` laid over them.
+    var style: EditorStyle {
+        EditorStyle.current.applying(editorConfig)
+    }
+
+    /// The text as a string that is safe to read on another thread.
+    func snapshotText() -> NSString {
+        textStorage.mutableString.copy() as! NSString
     }
 
     /// A new, untouched, empty document. Opening a file replaces it.
@@ -67,12 +82,34 @@ final class Document: NSDocument, NSTextStorageDelegate {
     }
 
     override var fileURL: URL? {
-        didSet { if oldValue != fileURL { detectSyntax() } }
+        didSet {
+            guard oldValue != fileURL else { return }
+            detectSyntax()
+            let config = fileURL.map { EditorConfig.load(for: $0) } ?? EditorConfig()
+            if config != editorConfig {
+                editorConfig = config
+                NotificationCenter.default.post(name: Self.formatDidChange, object: self)
+            }
+        }
     }
 
     // MARK: Reading
 
     override func read(from url: URL, ofType typeName: String) throws {
+        let size = (try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0
+        if size >= Self.largeFileLimit {
+            // Text is kept in memory as UTF-16 with layout data on top, so a large file needs
+            // several times its size. Say so before the Mac starts swapping.
+            let megabytes = { (bytes: Int) in ByteCountFormatter.string(fromByteCount: Int64(bytes), countStyle: .memory) }
+            let alert = NSAlert()
+            alert.messageText = "“\(url.lastPathComponent)” is \(megabytes(size))"
+            alert.informativeText = "Neutrino keeps the whole file in memory. Opening it will use about \(megabytes(size * 4)), and may be slow."
+            alert.addButton(withTitle: "Cancel")
+            alert.addButton(withTitle: "Open Anyway")
+            guard alert.runModal() == .alertSecondButtonReturn else {
+                throw CocoaError(.userCancelled)
+            }
+        }
         try load(Data(contentsOf: url, options: .mappedIfSafe), as: nil)
     }
 
@@ -89,10 +126,10 @@ final class Document: NSDocument, NSTextStorageDelegate {
     }
 
     /// Replaces the whole text without leaving an undo step.
-    private func setText(_ text: String) {
+    func setText(_ text: String) {
         let selection = editor?.textView.selectedRange()
         undoManager?.disableUndoRegistration()
-        textStorage.setAttributedString(NSAttributedString(string: text, attributes: EditorStyle.current.textAttributes))
+        textStorage.setAttributedString(NSAttributedString(string: text, attributes: style.textAttributes))
         undoManager?.enableUndoRegistration()
         if let selection, let textView = editor?.textView {
             textView.setSelectedRange(NSRange(location: min(selection.location, textStorage.length), length: 0))
@@ -190,6 +227,7 @@ final class Document: NSDocument, NSTextStorageDelegate {
 
     override func close() {
         NSObject.cancelPreviousPerformRequests(withTarget: self, selector: #selector(autosaveNow), object: nil)
+        if let fileURL { (NSDocumentController.shared as? DocumentController)?.noteClosed(fileURL) }
         super.close()
     }
 
@@ -289,6 +327,67 @@ final class Document: NSDocument, NSTextStorageDelegate {
         scheduleAutosave()
     }
 
+    // MARK: Comparing
+
+    /// Opens a new document with the differences between the file on disk and the text here.
+    @objc func compareWithSaved(_ sender: Any?) {
+        guard let url = fileURL, let data = try? Data(contentsOf: url, options: .mappedIfSafe),
+            let saved = TextCodec.decode(data, as: encoding)?.text
+        else { return NSSound.beep() }
+        let name = url.lastPathComponent
+        guard let diff = UnifiedDiff.make(
+            old: saved, new: textStorage.string, oldName: "\(name) (saved)", newName: "\(name) (now)")
+        else {
+            let alert = NSAlert()
+            alert.messageText = "No differences"
+            alert.informativeText = "The text is the same as the saved file."
+            alert.runModal()
+            return
+        }
+        guard let controller = NSDocumentController.shared as? DocumentController,
+            let document = try? controller.makeUntitledDocument(ofType: Self.typeName) as? Document
+        else { return }
+        document.setText(diff)
+        document.displayName = "Changes in \(name)"
+        document.setSyntax(id: "diff")
+        controller.addDocument(document)
+        document.makeWindowControllers()
+        document.showWindows()
+    }
+
+    override func validateUserInterfaceItem(_ item: NSValidatedUserInterfaceItem) -> Bool {
+        switch item.action {
+        case #selector(compareWithSaved(_:)): return fileURL != nil && textStorage.length < 20 << 20
+        case #selector(previewInMDReader(_:)): return isMarkdown && fileURL != nil
+        default: return super.validateUserInterfaceItem(item)
+        }
+    }
+
+    // MARK: MDReader
+
+    private var isMarkdown: Bool {
+        syntax?.definition.id == "markdown"
+            || ["md", "markdown", "mdown", "mkd", "mkdn", "mdwn"].contains(fileURL?.pathExtension.lowercased() ?? "")
+    }
+
+    /// Opens the file in MDReader, the Markdown reader by the same developer, to see it rendered.
+    @objc func previewInMDReader(_ sender: Any?) {
+        guard let url = fileURL else { return }
+        autosaveNow()
+        if let app = NSWorkspace.shared.urlForApplication(withBundleIdentifier: "com.movinapp.mdreader.macos") {
+            NSWorkspace.shared.open([url], withApplicationAt: app, configuration: NSWorkspace.OpenConfiguration())
+            return
+        }
+        let alert = NSAlert()
+        alert.messageText = "MDReader isn't installed"
+        alert.informativeText = "MDReader is a free Markdown reader from the same developer. It shows the rendered page and updates as you save."
+        alert.addButton(withTitle: "Get MDReader")
+        alert.addButton(withTitle: "Cancel")
+        if alert.runModal() == .alertFirstButtonReturn, let page = URL(string: "https://github.com/rboundi/mdreader") {
+            NSWorkspace.shared.open(page)
+        }
+    }
+
     // MARK: Printing
 
     override func printOperation(withSettings printSettings: [NSPrintInfo.AttributeKey: Any]) throws -> NSPrintOperation {
@@ -306,7 +405,29 @@ final class Document: NSDocument, NSTextStorageDelegate {
 
 /// Opens any file as a `Document`, whatever its type, and keeps one empty window from piling up.
 final class DocumentController: NSDocumentController {
+    /// Files closed in this session, most recent last, for Reopen Closed Tab.
+    private var closed: [URL] = []
+
     override var defaultType: String? { Document.typeName }
+
+    func noteClosed(_ url: URL) {
+        closed.removeAll { $0 == url }
+        closed.append(url)
+        if closed.count > 20 { closed.removeFirst() }
+    }
+
+    @objc func reopenClosedTab(_ sender: Any?) {
+        while let url = closed.popLast() {
+            guard FileManager.default.fileExists(atPath: url.path) else { continue }
+            return openDocument(withContentsOf: url, display: true) { _, _, _ in }
+        }
+        NSSound.beep()
+    }
+
+    override func validateUserInterfaceItem(_ item: NSValidatedUserInterfaceItem) -> Bool {
+        if item.action == #selector(reopenClosedTab(_:)) { return !closed.isEmpty }
+        return super.validateUserInterfaceItem(item)
+    }
 
     override func documentClass(forType typeName: String) -> AnyClass? { Document.self }
 

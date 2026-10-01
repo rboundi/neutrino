@@ -30,11 +30,15 @@ enum MainMenu {
         let recent = NSMenu()
         recent.delegate = delegate
         file.addItem(withTitle: "Open Recent", action: nil, keyEquivalent: "").submenu = recent
+        add(file, "Reopen Closed Tab", #selector(DocumentController.reopenClosedTab(_:)), "t", [.command, .shift])
         file.addItem(.separator())
         add(file, "Close", #selector(NSWindow.performClose(_:)), "w")
         add(file, "Save", #selector(NSDocument.save(_:)), "s")
         add(file, "Save As…", #selector(NSDocument.saveAs(_:)), "s", [.command, .shift])
         add(file, "Revert to Saved", #selector(NSDocument.revertToSaved(_:)))
+        add(file, "Compare with Saved", #selector(Document.compareWithSaved(_:)))
+        file.addItem(.separator())
+        add(file, "Preview in MDReader", #selector(Document.previewInMDReader(_:)), "p", [.command, .option])
         file.addItem(.separator())
         add(file, "Print…", #selector(NSDocument.printDocument(_:)), "p")
 
@@ -57,10 +61,39 @@ enum MainMenu {
         add(find, "Find All", #selector(EditorWindowController.findAll(_:)), "f", [.command, .control])
         add(find, "Use Selection for Find", #selector(EditorWindowController.useSelectionForFind(_:)), "e")
         add(edit, "Go to Line…", #selector(EditorWindowController.goToLine(_:)), "l")
+        add(edit, "Go to Symbol…", #selector(EditorWindowController.showSymbols(_:)), "o", [.command, .shift])
+        add(edit, "Go to Matching Bracket", #selector(EditorTextView.goToMatchingBracket(_:)), "m", [.command, .shift])
         edit.addItem(.separator())
-        add(edit, "Shift Right", #selector(EditorTextView.shiftRight(_:)), "]")
-        add(edit, "Shift Left", #selector(EditorTextView.shiftLeft(_:)), "[")
-        add(edit, "Comment or Uncomment", #selector(EditorTextView.toggleComment(_:)), "/")
+
+        let cursors = NSMenu()
+        edit.addItem(withTitle: "Cursors", action: nil, keyEquivalent: "").submenu = cursors
+        add(cursors, "Select Next Occurrence", #selector(EditorTextView.selectNextOccurrence(_:)), "d")
+        add(cursors, "Add Cursor Above", #selector(EditorTextView.addCursorAbove(_:)), String(UnicodeScalar(NSUpArrowFunctionKey)!), [.command, .option])
+        add(cursors, "Add Cursor Below", #selector(EditorTextView.addCursorBelow(_:)), String(UnicodeScalar(NSDownArrowFunctionKey)!), [.command, .option])
+        add(cursors, "Split Selection into Lines", #selector(EditorTextView.splitSelectionIntoLines(_:)), "l", [.command, .shift])
+
+        let lines = NSMenu()
+        edit.addItem(withTitle: "Lines", action: nil, keyEquivalent: "").submenu = lines
+        add(lines, "Shift Right", #selector(EditorTextView.shiftRight(_:)), "]")
+        add(lines, "Shift Left", #selector(EditorTextView.shiftLeft(_:)), "[")
+        add(lines, "Comment or Uncomment", #selector(EditorTextView.toggleComment(_:)), "/")
+        lines.addItem(.separator())
+        add(lines, "Move Up", #selector(EditorTextView.moveLinesUp(_:)), String(UnicodeScalar(NSUpArrowFunctionKey)!), [.command, .control])
+        add(lines, "Move Down", #selector(EditorTextView.moveLinesDown(_:)), String(UnicodeScalar(NSDownArrowFunctionKey)!), [.command, .control])
+        add(lines, "Duplicate", #selector(EditorTextView.duplicateLines(_:)), "d", [.command, .shift])
+        add(lines, "Delete", #selector(EditorTextView.deleteLines(_:)), "k", [.command, .shift])
+        add(lines, "Join", #selector(EditorTextView.joinLines(_:)), "j", [.command])
+        lines.addItem(.separator())
+        add(lines, "Sort", #selector(EditorTextView.sortLines(_:)))
+        add(lines, "Remove Duplicates", #selector(EditorTextView.removeDuplicateLines(_:)))
+
+        let letters = NSMenu()
+        edit.addItem(withTitle: "Convert Case", action: nil, keyEquivalent: "").submenu = letters
+        add(letters, "Upper Case", #selector(NSResponder.uppercaseWord(_:)))
+        add(letters, "Lower Case", #selector(NSResponder.lowercaseWord(_:)))
+        add(letters, "Capitalize", #selector(NSResponder.capitalizeWord(_:)))
+
+        add(edit, "Filter Through Command…", #selector(EditorWindowController.filterThroughCommand(_:)), "r", [.command, .option])
 
         // View
         let view = submenu("View", in: main)
@@ -84,6 +117,11 @@ enum MainMenu {
         add(window, "Zoom", #selector(NSWindow.performZoom(_:)))
         window.addItem(.separator())
         add(window, "Bring All to Front", #selector(NSApplication.arrangeInFront(_:)))
+        window.addItem(.separator())
+        for number in 1...9 {
+            let title = number == 9 ? "Show Last Tab" : "Show Tab \(number)"
+            add(window, title, #selector(AppDelegate.showTab(_:)), String(number), target: delegate).tag = number
+        }
         NSApp.windowsMenu = window
 
         // Help

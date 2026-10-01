@@ -1,0 +1,30 @@
+{
+  "id": "solarized-dark",
+  "name": "Solarized Dark",
+  "version": 1,
+  "dark": true,
+  "background": "#002B36",
+  "text": "#839496",
+  "selection": "#073642",
+  "currentLine": "#04323E",
+  "lineNumbers": "#586E75",
+  "findMatch": "#5A5200",
+  "scopes": {
+    "comment": "#586E75",
+    "string": "#2AA198",
+    "keyword": "#859900",
+    "number": "#D33682",
+    "type": "#B58900",
+    "function": "#268BD2",
+    "constant": "#CB4B16",
+    "variable": "#268BD2",
+    "tag": "#268BD2",
+    "attribute": "#93A1A1",
+    "operator": "#859900",
+    "heading": "#CB4B16",
+    "link": "#6C71C4",
+    "emphasis": "#B58900",
+    "inserted": "#859900",
+    "deleted": "#DC322F"
+  }
+}

@@ -17,13 +17,19 @@
 - Line numbers, line wrapping, current line highlight, invisible characters
 - Indentation is kept on new lines; brackets and quotes are closed as you type
 - Spaces or tabs, with any tab width. Makefiles and Go files always use tabs
-- Shift lines left and right (<kbd>⌘</kbd><kbd>[</kbd> / <kbd>⌘</kbd><kbd>]</kbd>), comment and uncomment (<kbd>⌘</kbd><kbd>/</kbd>), go to line (<kbd>⌘</kbd><kbd>L</kbd>)
+- Multiple cursors: <kbd>⌘</kbd><kbd>D</kbd> selects the next occurrence, <kbd>⌥</kbd><kbd>⌘</kbd><kbd>↑</kbd> / <kbd>↓</kbd> adds a cursor above or below, <kbd>⌘</kbd>-click adds one anywhere, <kbd>⌥</kbd>-drag selects a column. <kbd>Esc</kbd> goes back to one
+- Line commands: move up and down, duplicate, delete, join, sort, remove duplicates, shift left and right, comment and uncomment, change case
+- The bracket matching the one beside the caret is highlighted; <kbd>⇧</kbd><kbd>⌘</kbd><kbd>M</kbd> jumps to it
+- **Filter Through Command** (<kbd>⌥</kbd><kbd>⌘</kbd><kbd>R</kbd>) sends the selection, or the whole text, through a shell command such as `sort -u` or `jq .` and replaces it with the output
+- Go to line (<kbd>⌘</kbd><kbd>L</kbd>) and go to symbol (<kbd>⇧</kbd><kbd>⌘</kbd><kbd>O</kbd>): the functions, classes and headings of the document
+- `.editorconfig` files are followed for indent style, indent size, trailing spaces and the final line break
 - A file's encoding, byte order mark and line endings are kept when saving. Change them, or reopen with another encoding, from the status bar
 - Changes are saved automatically a few seconds after you stop typing and when you switch to another window or app. macOS keeps earlier versions (**File → Revert to Saved**)
 - With **Settings → General → Save changes automatically** off, files are only written when you save. Unsaved text is still recovered after a crash
 - Files changed by another app are reloaded when there are no unsaved changes
+- **File → Compare with Saved** shows what differs from the file on disk, as a diff
 - Optionally remove trailing spaces and end the file with a line break when saving
-- Light, dark or system theme
+- Text size buttons in the status bar; the size you pick is used for every document from then on
 
 **Find and replace** (<kbd>⌘</kbd><kbd>F</kbd>)
 - Plain text or regular expressions, match case, whole words
@@ -40,12 +46,21 @@
 - Available: C, C++, C#, CSS, Diff, Dockerfile, Go, HTML, INI, Java, JavaScript, JSON, Kotlin, Lua, Makefile, Markdown, PHP, Python, Ruby, Rust, Shell, SQL, Swift, TOML, TypeScript, XML, YAML
 - A syntax is one JSON file. See [docs/syntaxes.md](docs/syntaxes.md) to write your own
 
+**Themes**
+- Light, dark or system appearance with the built-in colours
+- More themes in **Settings → Appearance**, downloaded when you install them: Dracula, GitHub Light, Monokai, Nord, One Dark, Solarized Dark, Solarized Light
+- A theme is one JSON file. See [docs/themes.md](docs/themes.md)
+
+**Markdown**
+- **File → Preview in MDReader** (<kbd>⌥</kbd><kbd>⌘</kbd><kbd>P</kbd>) opens the file in [MDReader](https://github.com/rboundi/mdreader), a free Markdown reader from the same developer. It shows the rendered page and updates as you save
+
 **Other**
-- `neutrino` command: `neutrino main.c notes.txt` or `git diff | neutrino`
+- `neutrino` command: `neutrino main.c notes.txt`, `neutrino main.c:42` or `git diff | neutrino`
+- Reopen a closed tab with <kbd>⇧</kbd><kbd>⌘</kbd><kbd>T</kbd>; <kbd>⌘</kbd><kbd>1</kbd>…<kbd>⌘</kbd><kbd>8</kbd> show that tab, <kbd>⌘</kbd><kbd>9</kbd> the last
 - Reopens the documents from the last session
 - Weekly check for new versions on GitHub (can be turned off)
 
-Files above 4 million characters open without colours.
+Files above 4 million characters open without colours. The whole file is held in memory, so Neutrino asks before opening one larger than 150 MB.
 
 ## Install
 
@@ -84,43 +99,60 @@ This installs the app to `/Applications` and links the `neutrino` command into `
 | Find next / previous | <kbd>⌘</kbd><kbd>G</kbd> / <kbd>⇧</kbd><kbd>⌘</kbd><kbd>G</kbd> (or <kbd>Return</kbd> / <kbd>⇧</kbd><kbd>Return</kbd> in the search field) |
 | Find All | <kbd>⌃</kbd><kbd>⌘</kbd><kbd>F</kbd> |
 | Use Selection for Find | <kbd>⌘</kbd><kbd>E</kbd> |
-| Go to Line | <kbd>⌘</kbd><kbd>L</kbd> |
+| Go to Line / Symbol | <kbd>⌘</kbd><kbd>L</kbd> / <kbd>⇧</kbd><kbd>⌘</kbd><kbd>O</kbd> |
+| Go to matching bracket | <kbd>⇧</kbd><kbd>⌘</kbd><kbd>M</kbd> |
+| Select next occurrence | <kbd>⌘</kbd><kbd>D</kbd> |
+| Add cursor above / below | <kbd>⌥</kbd><kbd>⌘</kbd><kbd>↑</kbd> / <kbd>⌥</kbd><kbd>⌘</kbd><kbd>↓</kbd> |
+| Split selection into lines | <kbd>⇧</kbd><kbd>⌘</kbd><kbd>L</kbd> |
+| Move line up / down | <kbd>⌃</kbd><kbd>⌘</kbd><kbd>↑</kbd> / <kbd>⌃</kbd><kbd>⌘</kbd><kbd>↓</kbd> |
+| Duplicate / delete / join lines | <kbd>⇧</kbd><kbd>⌘</kbd><kbd>D</kbd> / <kbd>⇧</kbd><kbd>⌘</kbd><kbd>K</kbd> / <kbd>⌘</kbd><kbd>J</kbd> |
 | Shift left / right | <kbd>⌘</kbd><kbd>[</kbd> / <kbd>⌘</kbd><kbd>]</kbd> |
 | Comment or uncomment | <kbd>⌘</kbd><kbd>/</kbd> |
+| Filter Through Command | <kbd>⌥</kbd><kbd>⌘</kbd><kbd>R</kbd> |
+| Preview in MDReader | <kbd>⌥</kbd><kbd>⌘</kbd><kbd>P</kbd> |
+| Reopen closed tab | <kbd>⇧</kbd><kbd>⌘</kbd><kbd>T</kbd> |
+| Show tab 1–8 / last tab | <kbd>⌘</kbd><kbd>1</kbd>…<kbd>⌘</kbd><kbd>8</kbd> / <kbd>⌘</kbd><kbd>9</kbd> |
 | Bigger / smaller / default text size | <kbd>⌘</kbd><kbd>+</kbd> / <kbd>⌘</kbd><kbd>-</kbd> / <kbd>⌘</kbd><kbd>0</kbd> |
 | Settings | <kbd>⌘</kbd><kbd>,</kbd> |
 
 ## Privacy
 
-Neutrino connects to `raw.githubusercontent.com` to list and download syntaxes when you open **Settings → Syntaxes** or install one, and to `github.com` to check for new versions once a week. The update check can be turned off in Settings. There is no analytics or telemetry.
+Neutrino connects to `raw.githubusercontent.com` to list and download syntaxes and themes when you open **Settings → Syntaxes** or **Settings → Appearance**, or install one, and to `github.com` to check for new versions once a week. The update check can be turned off in Settings. There is no analytics or telemetry.
 
 ## Project layout
 
 ```
 Sources/NeutrinoCore/           No UI, covered by tests
-  Syntax.swift                  Syntax files and the tokenizer
+  Syntax.swift                  Syntax files, the tokenizer, symbols
   Search.swift                  Search, replacement templates, replace all
   TextCodec.swift               Encodings and line endings
   LineIndex.swift               Line starts, kept up to date across edits
+  EditorConfig.swift            Reading .editorconfig files
+  UnifiedDiff.swift             Compare with Saved
+  ThemeDefinition.swift         Theme files
 Sources/Neutrino/
   main.swift, AppDelegate.swift App entry, launch and quit
   MainMenu.swift                Menu bar
   Document.swift                An open file: reading, writing, reloading
   EditorWindowController.swift  Window layout, colours, settings
   EditorFind.swift              Find and replace
-  EditorTextView.swift          Text view, invisibles, line numbers
+  EditorCommands.swift          Shell filter and the symbol menu
+  EditorTextView.swift          Text view: cursors, line commands, brackets, invisibles, line numbers
   FindBar.swift                 Find bar and the Find All list
   StatusBar.swift               Status bar and its menus
-  SyntaxStore.swift             Installing, loading and unloading syntaxes
+  PackageFolder.swift           Installing and removing downloaded files
+  SyntaxStore.swift             Loading and unloading syntaxes
+  Theme.swift                   Colours and the theme in use
   SettingsView.swift            Settings window
   UpdateChecker.swift           Release check
 syntaxes/                       Published syntax files and their index
+themes/                         Published theme files and their index
 Resources/                      Info.plist, icon, the neutrino command
-scripts/                        Icon generator, syntax index, release script
-Tests/                          Tests for NeutrinoCore and every syntax file
+scripts/                        Icon generator, index builder, release script
+Tests/                          Tests for NeutrinoCore and every syntax and theme file
 ```
 
-The app is AppKit with TextKit 1, with no third-party packages. Colours are applied only to the text on screen.
+The app is AppKit with TextKit 1, with no third-party packages. Colours are applied only to the text on screen, and after an edit only the changed part is scanned again.
 
 ## Development
 

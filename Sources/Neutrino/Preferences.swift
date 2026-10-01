@@ -1,4 +1,5 @@
 import AppKit
+import NeutrinoCore
 
 enum AppearanceMode: String, CaseIterable, Identifiable {
     case system, light, dark
@@ -16,6 +17,8 @@ enum AppearanceMode: String, CaseIterable, Identifiable {
 /// UserDefaults keys and helpers. Everything the app remembers lives here.
 enum Prefs {
     static let appearance = "appearance"
+    static let theme = "theme"
+    static let filterCommand = "filterCommand"
     static let fontName = "fontName"
     static let fontSize = "fontSize"
     static let tabWidth = "tabWidth"
@@ -65,6 +68,14 @@ enum Prefs {
         ])
     }
 
+    /// Makes the editor text larger or smaller for every document, now and in future.
+    /// A step of zero goes back to the standard size.
+    static func changeFontSize(by step: Double) {
+        let defaults = UserDefaults.standard
+        let size = step == 0 ? defaultFontSize : defaults.double(forKey: fontSize) + step
+        defaults.set(min(max(size, 8), 48), forKey: fontSize)
+    }
+
     static var appearanceMode: AppearanceMode {
         AppearanceMode(rawValue: UserDefaults.standard.string(forKey: appearance) ?? "") ?? .system
     }
@@ -82,6 +93,8 @@ struct EditorStyle: Equatable {
     var highlightCurrentLine: Bool
     var autoIndent: Bool
     var autoCloseBrackets: Bool
+    /// The installed theme in use; empty for the built-in colours.
+    var theme: String
 
     static var current: EditorStyle {
         let defaults = UserDefaults.standard
@@ -95,7 +108,16 @@ struct EditorStyle: Equatable {
             showInvisibles: defaults.bool(forKey: Prefs.showInvisibles),
             highlightCurrentLine: defaults.bool(forKey: Prefs.highlightCurrentLine),
             autoIndent: defaults.bool(forKey: Prefs.autoIndent),
-            autoCloseBrackets: defaults.bool(forKey: Prefs.autoCloseBrackets))
+            autoCloseBrackets: defaults.bool(forKey: Prefs.autoCloseBrackets),
+            theme: defaults.string(forKey: Prefs.theme) ?? "")
+    }
+
+    /// These settings with the ones an `.editorconfig` file sets for a document laid over them.
+    func applying(_ config: EditorConfig) -> EditorStyle {
+        var style = self
+        if let spaces = config.indentWithSpaces { style.insertSpaces = spaces }
+        if let width = config.indentWidth { style.tabWidth = width }
+        return style
     }
 
     var font: NSFont {

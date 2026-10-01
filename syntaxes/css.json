@@ -1,9 +1,10 @@
 {
   "id": "css",
   "name": "CSS",
-  "version": 1,
+  "version": 2,
   "extensions": ["css", "scss", "less"],
   "blockComment": ["/*", "*/"],
+  "symbols": ["^[ \\t]*([^\\s{}/][^{};\\n]*?)[ \\t]*\\{"],
   "rules": [
     {"scope": "comment", "begin": "/\\*", "end": "\\*/"},
     {"scope": "string", "begin": "\"", "end": "\"", "escape": "\\\\", "multiline": false},

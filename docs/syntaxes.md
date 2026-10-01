@@ -39,6 +39,7 @@ when it is installed; a rule that isn't a valid regular expression is reported w
 | `caseInsensitive` | no | `true` to ignore case in every rule |
 | `indentWithTabs` | no | `true` for languages that need tab characters |
 | `indentAfterColon` | no | `true` when a line ending in a colon should indent the next one, as in Python |
+| `symbols` | no | Regular expressions for the symbol menu; see below |
 | `rules` | yes | The rules, in order of priority |
 
 ## Rules
@@ -66,8 +67,19 @@ boundaries. Use `(?:…)` for grouping. For a backreference, name the group:
 `(?<quote>['"]).*?\k<quote>`. Numbered backreferences such as `\1` don't work, because all
 rules are joined into one expression.
 
+## Symbols
+
+`symbols` is a list of regular expressions that find the names shown by **Go to Symbol**:
+functions, classes, headings. The first capture group is the name; without a group, the whole
+match is. Matches inside strings and comments are left out.
+
+```json
+"symbols": ["^[ \\t]*(?:async[ \\t]+)?(?:def|class)[ \\t]+(\\w+)"]
+```
+
 ## Publishing a syntax
 
 1. Add `syntaxes/<id>.json`.
-2. Run `scripts/make_syntax_index.py` to rebuild `syntaxes/index.json`.
-3. Run `swift test`. It compiles every syntax file and checks the index.
+2. Run `scripts/make_index.py` to rebuild `syntaxes/index.json`.
+3. Raise `version` if the file was already published, so installed copies show **Update**.
+4. Run `swift test`. It compiles every syntax file and checks the index.

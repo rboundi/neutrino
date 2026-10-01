@@ -1,11 +1,12 @@
 {
   "id": "ruby",
   "name": "Ruby",
-  "version": 1,
+  "version": 2,
   "extensions": ["rb", "rake", "gemspec", "ru"],
   "filenames": ["Gemfile", "Rakefile", "Podfile", "Fastfile", "Brewfile", "Vagrantfile"],
   "firstLine": "^#!.*\\bruby",
   "lineComment": "#",
+  "symbols": ["^[ \\t]*(?:def|class|module)[ \\t]+([\\w.:?!=]+)"],
   "rules": [
     {"scope": "comment", "begin": "^=begin\\b", "end": "^=end\\b"},
     {"scope": "comment", "match": "#.*"},

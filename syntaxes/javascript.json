@@ -1,11 +1,12 @@
 {
   "id": "javascript",
   "name": "JavaScript",
-  "version": 1,
+  "version": 2,
   "extensions": ["js", "mjs", "cjs", "jsx"],
   "firstLine": "^#!.*\\b(?:node|deno|bun)\\b",
   "lineComment": "//",
   "blockComment": ["/*", "*/"],
+  "symbols": ["^[ \\t]*(?:export[ \\t]+)?(?:default[ \\t]+)?(?:async[ \\t]+)?(?:function\\*?|class)[ \\t]+(\\w+)", "^[ \\t]*(?:export[ \\t]+)?(?:const|let|var)[ \\t]+(\\w+)[ \\t]*=[ \\t]*(?:async[ \\t]*)?(?:\\([^)\\n]*\\)|\\w+)[ \\t]*=>"],
   "rules": [
     {"scope": "comment", "match": "//.*"},
     {"scope": "comment", "begin": "/\\*", "end": "\\*/"},

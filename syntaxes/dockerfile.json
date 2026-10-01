@@ -1,11 +1,12 @@
 {
   "id": "dockerfile",
   "name": "Dockerfile",
-  "version": 1,
+  "version": 2,
   "extensions": ["dockerfile"],
   "filenames": ["Dockerfile", "Containerfile"],
   "lineComment": "#",
   "caseInsensitive": true,
+  "symbols": ["^[ \\t]*FROM[ \\t]+(.+)$"],
   "rules": [
     {"scope": "comment", "match": "^[ \\t]*#.*"},
     {"scope": "keyword", "match": "^[ \\t]*(?:FROM|RUN|CMD|LABEL|MAINTAINER|EXPOSE|ENV|ADD|COPY|ENTRYPOINT|VOLUME|USER|WORKDIR|ARG|ONBUILD|STOPSIGNAL|HEALTHCHECK|SHELL)\\b|\\bAS\\b"},

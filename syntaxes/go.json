@@ -1,11 +1,12 @@
 {
   "id": "go",
   "name": "Go",
-  "version": 1,
+  "version": 2,
   "extensions": ["go"],
   "lineComment": "//",
   "blockComment": ["/*", "*/"],
   "indentWithTabs": true,
+  "symbols": ["^func[ \\t]+(?:\\([^)]*\\)[ \\t]*)?(\\w+)", "^type[ \\t]+(\\w+)"],
   "rules": [
     {"scope": "comment", "match": "//.*"},
     {"scope": "comment", "begin": "/\\*", "end": "\\*/"},

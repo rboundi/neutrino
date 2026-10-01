@@ -1,9 +1,10 @@
 {
   "id": "markdown",
   "name": "Markdown",
-  "version": 1,
+  "version": 2,
   "extensions": ["md", "markdown", "mdown", "mkd", "mdx"],
   "blockComment": ["<!--", "-->"],
+  "symbols": ["^#{1,6}[ \\t]+.+$"],
   "rules": [
     {"scope": "string", "match": "^[ \\t]*(?<fence>`{3,}|~{3,})[^\\n]*\\n[\\s\\S]*?(?:^[ \\t]*\\k<fence>[ \\t]*$|\\z)"},
     {"scope": "comment", "begin": "<!--", "end": "-->"},

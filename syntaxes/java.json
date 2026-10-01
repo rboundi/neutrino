@@ -1,10 +1,11 @@
 {
   "id": "java",
   "name": "Java",
-  "version": 1,
+  "version": 2,
   "extensions": ["java"],
   "lineComment": "//",
   "blockComment": ["/*", "*/"],
+  "symbols": ["^[ \\t]*(?:[\\w@]+[ \\t]+)*(?:class|interface|enum|record)[ \\t]+(\\w+)", "^[ \\t]+(?:(?:public|private|protected|static|final|abstract|synchronized)[ \\t]+)+[\\w<>\\[\\],.? ]+[ \\t]+(\\w+)[ \\t]*\\("],
   "rules": [
     {"scope": "comment", "match": "//.*"},
     {"scope": "comment", "begin": "/\\*", "end": "\\*/"},

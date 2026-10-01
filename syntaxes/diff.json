@@ -1,8 +1,9 @@
 {
   "id": "diff",
   "name": "Diff",
-  "version": 1,
+  "version": 2,
   "extensions": ["diff", "patch"],
+  "symbols": ["^\\+\\+\\+ (?:b/)?(.+)$"],
   "rules": [
     {"scope": "keyword", "match": "^(?:diff|index|new file|deleted file|similarity|rename|old mode|new mode|Binary files)\\b.*"},
     {"scope": "heading", "match": "^(?:\\+\\+\\+|---) .*"},

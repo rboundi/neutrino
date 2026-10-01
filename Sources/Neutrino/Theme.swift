@@ -1,16 +1,22 @@
 import AppKit
 import NeutrinoCore
 
-/// Editor colours. Each one resolves for light or dark when it is drawn.
+/// Editor colours: those of the installed theme in use, or the built-in ones, which follow
+/// the light or dark appearance when they are drawn.
 enum Theme {
-    static let text = NSColor.textColor
-    static let background = NSColor.textBackgroundColor
-    static let gutterText = NSColor.tertiaryLabelColor
-    static let invisibles = NSColor.quaternaryLabelColor
-    static let currentLine = dynamic(light: 0x000000, dark: 0xFFFFFF, alpha: 0.05)
-    static let findMatch = dynamic(light: 0xFFE14D, dark: 0x8A6D00, alpha: 0.55)
+    static var text: NSColor { ThemeStore.shared.active?.text ?? .textColor }
+    static var background: NSColor { ThemeStore.shared.active?.background ?? .textBackgroundColor }
+    static var gutterText: NSColor { ThemeStore.shared.active?.lineNumbers ?? .tertiaryLabelColor }
+    static var invisibles: NSColor { ThemeStore.shared.active?.text.withAlphaComponent(0.25) ?? .quaternaryLabelColor }
+    static var currentLine: NSColor { ThemeStore.shared.active?.currentLine ?? defaultCurrentLine }
+    static var findMatch: NSColor { ThemeStore.shared.active?.findMatch ?? defaultFindMatch }
+    static var selection: NSColor { ThemeStore.shared.active?.selection ?? .selectedTextBackgroundColor }
+    static var bracketMatch: NSColor { text.withAlphaComponent(0.22) }
 
-    private static let colors: [Scope: NSColor] = [
+    private static let defaultCurrentLine = dynamic(light: 0x000000, dark: 0xFFFFFF, alpha: 0.05)
+    private static let defaultFindMatch = dynamic(light: 0xFFE14D, dark: 0x8A6D00, alpha: 0.55)
+
+    private static let defaults: [Scope: NSColor] = [
         .comment: dynamic(light: 0x6A737D, dark: 0x7F8C98),
         .string: dynamic(light: 0xC41A16, dark: 0xFF8170),
         .keyword: dynamic(light: 0xAD3DA4, dark: 0xFF7AB2),
@@ -30,7 +36,8 @@ enum Theme {
     ]
 
     static func color(for scope: Scope) -> NSColor {
-        colors[scope] ?? text
+        if let theme = ThemeStore.shared.active { return theme.scopes[scope] ?? theme.text }
+        return defaults[scope] ?? text
     }
 
     private static func dynamic(light: UInt32, dark: UInt32, alpha: CGFloat = 1) -> NSColor {
@@ -40,5 +47,83 @@ enum Theme {
                 srgbRed: CGFloat((hex >> 16) & 0xff) / 255, green: CGFloat((hex >> 8) & 0xff) / 255,
                 blue: CGFloat(hex & 0xff) / 255, alpha: alpha)
         }
+    }
+}
+
+/// A theme file turned into colours.
+struct LoadedTheme {
+    let id: String
+    let dark: Bool
+    let background: NSColor
+    let text: NSColor
+    let selection: NSColor
+    let currentLine: NSColor
+    let lineNumbers: NSColor
+    let findMatch: NSColor
+    let scopes: [Scope: NSColor]
+
+    init?(data: Data) {
+        guard let definition = try? JSONDecoder().decode(ThemeDefinition.self, from: data),
+            (try? definition.validate()) != nil
+        else { return nil }
+        func color(_ hex: String) -> NSColor {
+            let rgb = ThemeDefinition.rgb(hex) ?? (0, 0, 0)
+            return NSColor(srgbRed: rgb.red, green: rgb.green, blue: rgb.blue, alpha: 1)
+        }
+        id = definition.id
+        dark = definition.dark
+        background = color(definition.background)
+        text = color(definition.text)
+        selection = color(definition.selection)
+        currentLine = color(definition.currentLine)
+        lineNumbers = color(definition.lineNumbers)
+        findMatch = color(definition.findMatch)
+        var scopes: [Scope: NSColor] = [:]
+        for (name, hex) in definition.scopes {
+            if let scope = Scope(rawValue: name) { scopes[scope] = color(hex) }
+        }
+        self.scopes = scopes
+    }
+}
+
+/// Theme files on this Mac, the list of published ones, and the one in use.
+final class ThemeStore {
+    static let shared = ThemeStore()
+    static let didChange = Notification.Name("ThemeStoreDidChange")
+
+    let files = PackageFolder<ThemeInfo>(
+        name: "themes", folder: "Themes", didChange: ThemeStore.didChange,
+        decodeCatalog: { (try? JSONDecoder().decode(ThemeCatalog.self, from: $0))?.themes },
+        validate: { data in
+            let definition: ThemeDefinition
+            do {
+                definition = try JSONDecoder().decode(ThemeDefinition.self, from: data)
+            } catch {
+                throw SyntaxError(message: "Not a theme file.")
+            }
+            try definition.validate()
+            return definition.id
+        },
+        label: \.name)
+
+    private var cached: (id: String, theme: LoadedTheme?)?
+
+    private init() {
+        files.onChange = { [weak self] _ in self?.cached = nil }
+    }
+
+    /// The installed theme chosen in Settings; nil means the built-in colours.
+    var active: LoadedTheme? {
+        let id = UserDefaults.standard.string(forKey: Prefs.theme) ?? ""
+        if let cached, cached.id == id { return cached.theme }
+        let theme = id.isEmpty ? nil : files.data(for: id).flatMap(LoadedTheme.init(data:))
+        cached = (id, theme)
+        return theme
+    }
+
+    /// The window appearance that goes with the colours in use.
+    var appearance: NSAppearance? {
+        guard let active else { return Prefs.appearanceMode.nsAppearance }
+        return NSAppearance(named: active.dark ? .darkAqua : .aqua)
     }
 }

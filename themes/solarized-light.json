@@ -1,0 +1,30 @@
+{
+  "id": "solarized-light",
+  "name": "Solarized Light",
+  "version": 1,
+  "dark": false,
+  "background": "#FDF6E3",
+  "text": "#657B83",
+  "selection": "#EEE8D5",
+  "currentLine": "#F5EFDC",
+  "lineNumbers": "#93A1A1",
+  "findMatch": "#F2E08A",
+  "scopes": {
+    "comment": "#93A1A1",
+    "string": "#2AA198",
+    "keyword": "#859900",
+    "number": "#D33682",
+    "type": "#B58900",
+    "function": "#268BD2",
+    "constant": "#CB4B16",
+    "variable": "#268BD2",
+    "tag": "#268BD2",
+    "attribute": "#586E75",
+    "operator": "#859900",
+    "heading": "#CB4B16",
+    "link": "#6C71C4",
+    "emphasis": "#B58900",
+    "inserted": "#859900",
+    "deleted": "#DC322F"
+  }
+}

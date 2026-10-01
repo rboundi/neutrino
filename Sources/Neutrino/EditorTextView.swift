@@ -1,7 +1,8 @@
 import AppKit
 import NeutrinoCore
 
-/// The text view: indentation, bracket pairs, commenting and the current-line highlight.
+/// The text view: indentation, bracket pairs, multiple cursors, line commands and the
+/// current-line highlight.
 final class EditorTextView: NSTextView {
     var style = EditorStyle.current
     /// Set by the syntax of the document: comment markers and whether tabs are required.
@@ -11,6 +12,20 @@ final class EditorTextView: NSTextView {
     var indentAfterColon = false
 
     private var currentLineRect = NSRect.zero
+
+    /// Every selection while there is more than one; empty for an ordinary single selection.
+    private(set) var cursors: [NSRange] = []
+    private var replaying = false
+    private var settingCursors = false
+
+    /// Positions of the bracket next to the caret and its partner.
+    private var bracketPair: (Int, Int)?
+    /// Tells brackets in code from those in strings and comments. Set by the window controller.
+    var isCode: (Int) -> Bool = { _ in true }
+
+    private static let partners: [unichar: unichar] = [
+        0x28: 0x29, 0x5B: 0x5D, 0x7B: 0x7D, 0x29: 0x28, 0x5D: 0x5B, 0x7D: 0x7B,
+    ]
 
     private static let pairs: [Character: Character] = ["(": ")", "[": "]", "{": "}", "\"": "\"", "'": "'", "`": "`"]
     private static let closers: Set<Character> = [")", "]", "}", "\"", "'", "`"]
@@ -105,6 +120,13 @@ final class EditorTextView: NSTextView {
     }
 
     override func insertText(_ string: Any, replacementRange: NSRange) {
+        if cursors.count > 1, !replaying, replacementRange.location == NSNotFound, !hasMarkedText() {
+            return replay { _ in self.insertOne(string, replacementRange: replacementRange) }
+        }
+        insertOne(string, replacementRange: replacementRange)
+    }
+
+    private func insertOne(_ string: Any, replacementRange: NSRange) {
         // Only keys typed by hand: edits made by the app pass a replacement range.
         guard style.autoCloseBrackets, replacementRange.location == NSNotFound, !hasMarkedText(),
             let typed = string as? String, typed.count == 1, let key = typed.first
@@ -152,11 +174,275 @@ final class EditorTextView: NSTextView {
         return super.shouldChangeText(inRanges: affectedRanges, replacementStrings: replacementStrings)
     }
 
+    // MARK: Multiple cursors
+
+    var cursorCount: Int { max(cursors.count, 1) }
+
+    /// Sorted, with overlapping and duplicate ranges merged.
+    private static func merge(_ ranges: [NSRange]) -> [NSRange] {
+        var result: [NSRange] = []
+        for range in ranges.sorted(by: { $0.location < $1.location }) {
+            if let last = result.last, range.location < NSMaxRange(last) || range == last
+                || (range.location == NSMaxRange(last) && (range.length == 0 || last.length == 0) && range.location == last.location) {
+                result[result.count - 1] = NSUnionRange(last, range)
+            } else {
+                result.append(range)
+            }
+        }
+        return result
+    }
+
+    private func setCursors(_ ranges: [NSRange]) {
+        let merged = Self.merge(ranges)
+        settingCursors = true
+        defer {
+            settingCursors = false
+            needsDisplay = true
+        }
+        guard merged.count > 1 else {
+            cursors = []
+            if let only = merged.first { setSelectedRange(only) }
+            return
+        }
+        cursors = merged
+        // The system shows the selections; carets without a selection are drawn in draw(_:).
+        let selected = merged.filter { $0.length > 0 }
+        if selected.isEmpty {
+            setSelectedRange(merged[merged.count - 1])
+        } else {
+            setSelectedRanges(selected.map(NSValue.init(range:)), affinity: .downstream, stillSelecting: false)
+        }
+    }
+
+    override func setSelectedRanges(_ ranges: [NSValue], affinity: NSSelectionAffinity, stillSelecting: Bool) {
+        super.setSelectedRanges(ranges, affinity: affinity, stillSelecting: stillSelecting)
+        guard !replaying, !settingCursors else { return }
+        // The selection was changed some other way: by the mouse, a menu command or undo.
+        if ranges.count > 1 {
+            if !stillSelecting { cursors = ranges.map(\.rangeValue) }
+        } else if !cursors.isEmpty {
+            cursors = []
+            needsDisplay = true
+        }
+    }
+
+    /// Runs an editing or movement command once per cursor, as one undo step.
+    private func replay(_ action: (Int) -> Void) {
+        replaying = true
+        undoManager?.beginUndoGrouping()
+        var result: [NSRange] = []
+        var shift = 0
+        for (index, cursor) in cursors.enumerated() {
+            let before = text.length
+            let range = NSRange(location: min(cursor.location + shift, before), length: cursor.length)
+            super.setSelectedRanges([NSValue(range: range)], affinity: .downstream, stillSelecting: false)
+            action(index)
+            shift += text.length - before
+            result.append(selectedRange())
+        }
+        undoManager?.endUndoGrouping()
+        replaying = false
+        setCursors(result)
+    }
+
+    override func doCommand(by selector: Selector) {
+        guard cursors.count > 1, !replaying else { return super.doCommand(by: selector) }
+        if selector == #selector(cancelOperation(_:)) {
+            return setCursors([cursors[0]])
+        }
+        replay { _ in super.doCommand(by: selector) }
+    }
+
+    override func paste(_ sender: Any?) {
+        guard cursors.count > 1, let pasted = NSPasteboard.general.string(forType: .string) else {
+            return super.paste(sender)
+        }
+        let clean = TextCodec.normalized(pasted)
+        var lines = clean.components(separatedBy: "\n")
+        if lines.last == "" { lines.removeLast() }
+        // One copied line per cursor goes to each cursor in turn; anything else goes to all of them.
+        let perCursor = lines.count == cursors.count
+        replay { index in
+            super.insertText(perCursor ? lines[index] : clean, replacementRange: self.selectedRange())
+        }
+    }
+
+    override func mouseDown(with event: NSEvent) {
+        let flags = event.modifierFlags.intersection([.command, .option, .shift, .control])
+        guard flags == .command, event.clickCount == 1 else { return super.mouseDown(with: event) }
+        // Command-click adds a caret, or removes the one that is already there.
+        let index = characterIndexForInsertion(at: convert(event.locationInWindow, from: nil))
+        var all = cursors.isEmpty ? [selectedRange()] : cursors
+        if let existing = all.firstIndex(where: { $0.length == 0 && $0.location == index }), all.count > 1 {
+            all.remove(at: existing)
+        } else {
+            all.append(NSRange(location: index, length: 0))
+        }
+        setCursors(all)
+    }
+
+    /// Selects the word at the caret, then on each further use the next place the same text occurs.
+    @objc func selectNextOccurrence(_ sender: Any?) {
+        let all = cursors.isEmpty ? [selectedRange()] : cursors
+        guard let last = all.last, let first = all.first else { return }
+        if all.count == 1, last.length == 0 {
+            let word = selectionRange(forProposedRange: last, granularity: .selectByWord)
+            if word.length > 0 { setSelectedRange(word) }
+            return
+        }
+        guard last.length > 0 else { return NSSound.beep() }
+        let needle = text.substring(with: last)
+        let end = NSMaxRange(last)
+        var found = text.range(of: needle, options: [], range: NSRange(location: end, length: text.length - end))
+        if found.location == NSNotFound {
+            found = text.range(of: needle, options: [], range: NSRange(location: 0, length: first.location))
+        }
+        guard found.location != NSNotFound, !all.contains(found) else { return NSSound.beep() }
+        setCursors(all + [found])
+        scrollRangeToVisible(found)
+    }
+
+    @objc func addCursorBelow(_ sender: Any?) { addCursor(below: true) }
+    @objc func addCursorAbove(_ sender: Any?) { addCursor(below: false) }
+
+    private func addCursor(below: Bool) {
+        let all = cursors.isEmpty ? [selectedRange()] : cursors
+        guard let from = below ? all.last : all.first else { return }
+        let line = text.lineRange(for: NSRange(location: from.location, length: 0))
+        let column = from.location - line.location
+        let target: NSRange
+        if below {
+            guard NSMaxRange(line) < text.length || (line.length > 0 && text.character(at: NSMaxRange(line) - 1) == 0x0A)
+            else { return NSSound.beep() }
+            target = text.lineRange(for: NSRange(location: NSMaxRange(line), length: 0))
+        } else {
+            guard line.location > 0 else { return NSSound.beep() }
+            target = text.lineRange(for: NSRange(location: line.location - 1, length: 0))
+        }
+        var length = target.length
+        if length > 0, text.character(at: NSMaxRange(target) - 1) == 0x0A { length -= 1 }
+        let caret = NSRange(location: target.location + min(column, length), length: 0)
+        setCursors(all + [caret])
+        scrollRangeToVisible(caret)
+    }
+
+    /// Puts a caret at the end of every line of the selection.
+    @objc func splitSelectionIntoLines(_ sender: Any?) {
+        let selection = selectedRange()
+        guard selection.length > 0 else { return NSSound.beep() }
+        var carets: [NSRange] = []
+        var position = selection.location
+        while position <= NSMaxRange(selection) {
+            let line = text.lineRange(for: NSRange(location: position, length: 0))
+            var end = NSMaxRange(line)
+            if line.length > 0, text.character(at: end - 1) == 0x0A { end -= 1 }
+            carets.append(NSRange(location: min(end, NSMaxRange(selection)), length: 0))
+            if NSMaxRange(line) <= position { break }
+            position = NSMaxRange(line)
+        }
+        setCursors(carets)
+    }
+
+    private func caretRect(at index: Int) -> NSRect? {
+        guard let layoutManager else { return nil }
+        var fragment: NSRect
+        var x: CGFloat
+        if index >= text.length, layoutManager.extraLineFragmentTextContainer != nil {
+            fragment = layoutManager.extraLineFragmentRect
+            x = fragment.minX
+        } else {
+            guard layoutManager.numberOfGlyphs > 0 else { return nil }
+            if index >= text.length {
+                let glyph = layoutManager.numberOfGlyphs - 1
+                fragment = layoutManager.lineFragmentRect(forGlyphAt: glyph, effectiveRange: nil)
+                x = layoutManager.lineFragmentUsedRect(forGlyphAt: glyph, effectiveRange: nil).maxX
+            } else {
+                let glyph = layoutManager.glyphIndexForCharacter(at: index)
+                fragment = layoutManager.lineFragmentRect(forGlyphAt: glyph, effectiveRange: nil)
+                x = fragment.minX + layoutManager.location(forGlyphAt: glyph).x
+            }
+        }
+        let origin = textContainerOrigin
+        return NSRect(x: x + origin.x, y: fragment.minY + origin.y, width: 1.5, height: fragment.height)
+    }
+
+    override func draw(_ dirtyRect: NSRect) {
+        super.draw(dirtyRect)
+        guard cursors.count > 1 else { return }
+        let system = selectedRange()
+        insertionPointColor.setFill()
+        for cursor in cursors where cursor.length == 0 && cursor != system {
+            caretRect(at: cursor.location)?.fill()
+        }
+    }
+
+    // MARK: Matching brackets
+
+    /// Finds the bracket beside the caret and its partner, skipping strings and comments.
+    func updateBracketMatch() {
+        var pair: (Int, Int)?
+        let selection = selectedRange()
+        if selection.length == 0, cursors.isEmpty {
+            for index in [selection.location, selection.location - 1] where index >= 0 && index < text.length {
+                if let partner = partner(of: index) {
+                    pair = (index, partner)
+                    break
+                }
+            }
+        }
+        guard pair?.0 != bracketPair?.0 || pair?.1 != bracketPair?.1 else { return }
+        bracketPair = pair
+        needsDisplay = true
+    }
+
+    private func partner(of index: Int) -> Int? {
+        let bracket = text.character(at: index)
+        guard let other = Self.partners[bracket], isCode(index) else { return nil }
+        let forward = bracket < other
+        let limit = 100_000
+        var depth = 0
+        var position = index
+        var steps = 0
+        while position >= 0, position < text.length, steps < limit {
+            let character = text.character(at: position)
+            if character == bracket || character == other, isCode(position) {
+                depth += character == bracket ? 1 : -1
+                if depth == 0 { return position }
+            }
+            position += forward ? 1 : -1
+            steps += 1
+        }
+        return nil
+    }
+
+    @objc func goToMatchingBracket(_ sender: Any?) {
+        guard let (_, partner) = bracketPair else { return NSSound.beep() }
+        // Land where the partner is beside the caret, so the command also goes back again.
+        let closes = [0x29, 0x5D, 0x7D].contains(text.character(at: partner))
+        let caret = NSRange(location: partner + (closes ? 1 : 0), length: 0)
+        setSelectedRange(caret)
+        scrollRangeToVisible(caret)
+    }
+
+    private func drawBracketMatch() {
+        guard let (first, second) = bracketPair, let layoutManager, let textContainer else { return }
+        Theme.bracketMatch.setFill()
+        for index in [first, second] where index < text.length {
+            let glyphs = layoutManager.glyphRange(forCharacterRange: NSRange(location: index, length: 1), actualCharacterRange: nil)
+            var rect = layoutManager.boundingRect(forGlyphRange: glyphs, in: textContainer)
+            rect.origin.x += textContainerOrigin.x
+            rect.origin.y += textContainerOrigin.y
+            NSBezierPath(roundedRect: rect, xRadius: 2, yRadius: 2).fill()
+        }
+    }
+
     // MARK: Lines
 
-    /// Rewrites the lines touched by the selection and keeps them selected.
-    private func transformLines(_ transform: ([String]) -> [String]) {
-        let selection = selectedRange()
+    /// Rewrites the lines touched by the selection and keeps them selected. With `wholeDocument`,
+    /// an empty selection means every line.
+    private func transformLines(wholeDocument: Bool = false, _ transform: ([String]) -> [String]) {
+        var selection = selectedRange()
+        if wholeDocument, selection.length == 0 { selection = NSRange(location: 0, length: text.length) }
         var block = text.lineRange(for: selection)
         let endsWithNewline = block.length > 0 && text.character(at: NSMaxRange(block) - 1) == 0x0A
         if endsWithNewline { block.length -= 1 }
@@ -170,6 +456,86 @@ final class EditorTextView: NSTextView {
             setSelectedRange(NSRange(location: min(max(caret, block.location), block.location + length), length: 0))
         } else {
             setSelectedRange(NSRange(location: block.location, length: length))
+        }
+    }
+
+    @objc func duplicateLines(_ sender: Any?) {
+        let selection = selectedRange()
+        let block = text.lineRange(for: selection)
+        let lines = text.substring(with: block)
+        let complete = lines.hasSuffix("\n")
+        replace(NSRange(location: NSMaxRange(block), length: 0), with: complete ? lines : "\n" + lines)
+        setSelectedRange(NSRange(location: selection.location + block.length + (complete ? 0 : 1), length: selection.length))
+    }
+
+    @objc func deleteLines(_ sender: Any?) {
+        var block = text.lineRange(for: selectedRange())
+        // The last line has no line break after it; take the one before it instead.
+        if NSMaxRange(block) == text.length, block.location > 0,
+            block.length == 0 || text.character(at: NSMaxRange(block) - 1) != 0x0A {
+            block = NSRange(location: block.location - 1, length: block.length + 1)
+        }
+        replace(block, with: "")
+    }
+
+    @objc func moveLinesUp(_ sender: Any?) {
+        let selection = selectedRange()
+        let block = text.lineRange(for: selection)
+        guard block.location > 0 else { return NSSound.beep() }
+        let previous = text.lineRange(for: NSRange(location: block.location - 1, length: 0))
+        var moving = text.substring(with: block)
+        var passed = text.substring(with: previous)
+        if !moving.hasSuffix("\n") {
+            moving += "\n"
+            passed.removeLast()
+        }
+        replace(NSUnionRange(previous, block), with: moving + passed)
+        let moved = NSRange(location: selection.location - previous.length, length: selection.length)
+        setSelectedRange(moved)
+        scrollRangeToVisible(moved)
+    }
+
+    @objc func moveLinesDown(_ sender: Any?) {
+        let selection = selectedRange()
+        let block = text.lineRange(for: selection)
+        guard NSMaxRange(block) < text.length else { return NSSound.beep() }
+        let next = text.lineRange(for: NSRange(location: NSMaxRange(block), length: 0))
+        var moving = text.substring(with: block)
+        var passed = text.substring(with: next)
+        if !passed.hasSuffix("\n") {
+            passed += "\n"
+            moving.removeLast()
+        }
+        replace(NSUnionRange(block, next), with: passed + moving)
+        let moved = NSRange(location: selection.location + (passed as NSString).length, length: selection.length)
+        setSelectedRange(moved)
+        scrollRangeToVisible(moved)
+    }
+
+    /// Joins the selected lines, or the current line with the next, with a single space.
+    @objc func joinLines(_ sender: Any?) {
+        var range = selectedRange()
+        if !text.substring(with: range).contains("\n") {
+            let line = text.lineRange(for: NSRange(location: range.location, length: 0))
+            guard NSMaxRange(line) < text.length else { return NSSound.beep() }
+            range = NSUnionRange(line, text.lineRange(for: NSRange(location: NSMaxRange(line), length: 0)))
+        }
+        var block = text.substring(with: range)
+        let trailing = block.hasSuffix("\n")
+        if trailing { block.removeLast() }
+        let joined = block.replacingOccurrences(of: "[ \\t]*\\n[ \\t]*", with: " ", options: .regularExpression)
+        replace(range, with: joined + (trailing ? "\n" : ""))
+        setSelectedRange(NSRange(location: range.location, length: (joined as NSString).length))
+    }
+
+    @objc func sortLines(_ sender: Any?) {
+        transformLines(wholeDocument: true) { $0.sorted { $0.localizedStandardCompare($1) == .orderedAscending } }
+    }
+
+    @objc func removeDuplicateLines(_ sender: Any?) {
+        transformLines(wholeDocument: true) { lines in
+            var seen = Set<String>()
+            return lines.filter { seen.insert($0).inserted }
         }
     }
 
@@ -237,7 +603,7 @@ final class EditorTextView: NSTextView {
 
     /// The line fragment holding the caret, across the full width of the view.
     private func caretLineRect() -> NSRect? {
-        guard style.highlightCurrentLine, selectedRange().length == 0,
+        guard style.highlightCurrentLine, selectedRange().length == 0, cursors.isEmpty,
             let layoutManager
         else { return nil }
         let location = selectedRange().location
@@ -265,6 +631,7 @@ final class EditorTextView: NSTextView {
 
     override func drawBackground(in rect: NSRect) {
         super.drawBackground(in: rect)
+        drawBracketMatch()
         guard let line = caretLineRect() else { return }
         currentLineRect = line
         Theme.currentLine.setFill()
