@@ -15,6 +15,16 @@ enum Theme {
     /// Behind the other places the selected word occurs.
     static var occurrence: NSColor { text.withAlphaComponent(0.13) }
     static var pageGuide: NSColor { text.withAlphaComponent(0.12) }
+    static var trailingSpace: NSColor { NSColor.systemRed.withAlphaComponent(0.3) }
+
+    /// The built-in colours as they are on a light background, for printing on paper.
+    static func printColor(for scope: Scope) -> NSColor {
+        var color = NSColor.black
+        NSAppearance(named: .aqua)?.performAsCurrentDrawingAppearance {
+            color = defaults[scope]?.usingColorSpace(.sRGB) ?? .black
+        }
+        return color
+    }
 
     private static let defaultCurrentLine = dynamic(light: 0x000000, dark: 0xFFFFFF, alpha: 0.05)
     private static let defaultFindMatch = dynamic(light: 0xFFE14D, dark: 0x8A6D00, alpha: 0.55)

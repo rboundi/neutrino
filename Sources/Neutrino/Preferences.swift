@@ -36,6 +36,9 @@ enum Prefs {
     /// The column of the page guide; 0 for none.
     static let pageGuide = "pageGuide"
     static let checkSpelling = "checkSpelling"
+    static let indentGuides = "indentGuides"
+    static let markTrailingSpaces = "markTrailingSpaces"
+    static let showColours = "showColours"
     /// Where the caret was in recently closed files, oldest first, as "location\tpath".
     static let positions = "positions"
     /// The macOS setting that keeps an app's windows, and the unsaved text in them, across a quit.
@@ -70,6 +73,9 @@ enum Prefs {
             detectIndentation: true,
             pageGuide: 0,
             checkSpelling: false,
+            indentGuides: false,
+            markTrailingSpaces: false,
+            showColours: false,
             checkForUpdates: true,
         ])
     }
@@ -132,6 +138,10 @@ struct EditorStyle: Equatable {
     var autoCloseBrackets: Bool
     var pageGuide: Int
     var checkSpelling: Bool
+    var indentGuides: Bool
+    var markTrailingSpaces: Bool
+    /// Whether hex colours such as #3E8087 are underlined in their own colour.
+    var showColours: Bool
     /// The installed theme in use; empty for the built-in colours.
     var theme: String
 
@@ -150,6 +160,9 @@ struct EditorStyle: Equatable {
             autoCloseBrackets: defaults.bool(forKey: Prefs.autoCloseBrackets),
             pageGuide: min(max(defaults.integer(forKey: Prefs.pageGuide), 0), 400),
             checkSpelling: defaults.bool(forKey: Prefs.checkSpelling),
+            indentGuides: defaults.bool(forKey: Prefs.indentGuides),
+            markTrailingSpaces: defaults.bool(forKey: Prefs.markTrailingSpaces),
+            showColours: defaults.bool(forKey: Prefs.showColours),
             theme: defaults.string(forKey: Prefs.theme) ?? "")
     }
 

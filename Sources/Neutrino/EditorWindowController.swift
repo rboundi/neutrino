@@ -25,6 +25,35 @@ struct Unchecked<Value>: @unchecked Sendable {
     let value: Value
 }
 
+/// The line between the two halves of a split window. It is taller than the line it draws, so it
+/// is easy to catch; dragging it resizes the halves and a double click makes them equal again.
+final class SplitDivider: NSView {
+    /// Called with the pointer's position in the window while the divider is dragged.
+    var onDrag: (NSPoint) -> Void = { _ in }
+    var onReset: () -> Void = {}
+
+    override var intrinsicContentSize: NSSize { NSSize(width: NSView.noIntrinsicMetric, height: 8) }
+
+    override func draw(_ dirtyRect: NSRect) {
+        Theme.background.setFill()
+        bounds.fill()
+        NSColor.separatorColor.setFill()
+        NSRect(x: 0, y: (bounds.midY - 1).rounded(.down), width: bounds.width, height: 2).fill()
+    }
+
+    override func resetCursorRects() {
+        addCursorRect(bounds, cursor: .resizeUpDown)
+    }
+
+    override func mouseDown(with event: NSEvent) {
+        if event.clickCount == 2 { onReset() }
+    }
+
+    override func mouseDragged(with event: NSEvent) {
+        onDrag(event.locationInWindow)
+    }
+}
+
 /// One document's window (or tab): the text, line numbers, find bar and status bar.
 final class EditorWindowController: NSWindowController, NSWindowDelegate, NSTextViewDelegate, NSMenuItemValidation {
     /// Above this many UTF-16 units a file is shown without colours.
@@ -39,10 +68,13 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSText
     /// The views of the text: one, or two while the window is split.
     private(set) var panes: [EditorPane]
     private var activeView: EditorTextView
-    /// Holds the panes: one filling it, or two of equal height with a line between them.
+    /// Holds the panes: one filling it, or two with a line between them that can be dragged.
     private let editorArea = NSView()
-    private let divider = NSBox()
+    private let divider = SplitDivider()
     private var paneConstraints: [NSLayoutConstraint] = []
+    /// The share of the editor area the upper pane takes while the window is split.
+    private var splitRatio: CGFloat = 0.5
+    private var splitHeight: NSLayoutConstraint?
     let findBar = FindBar()
     let resultsView = FindResultsView()
     let statusBar = StatusBar()
@@ -70,6 +102,14 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSText
     private var highlightTimedOut = false
     /// The selected word, while its other occurrences are marked.
     private var occurrence: String?
+    /// Whether the document is read-only for now, by the lock in the status bar.
+    private(set) var isLocked = false
+    /// True while a shell command runs on the text.
+    private var isBusy = false
+    /// Where the text was edited lately, most recent last, for Go to Last Edit.
+    private var editPlaces: [Int] = []
+    private var editPlaceIndex: Int?
+    private var caretLine = 0
     /// Set once something has put the caret where it should be, such as `neutrino file:42`.
     private var positionWasSet = false
 
@@ -90,6 +130,12 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSText
     /// The document is attached after `init`, so anything that reads it is refreshed here.
     override var document: AnyObject? {
         didSet {
+            // A file that can't be written starts locked, so typing doesn't lead to a failed save.
+            if let path = doc?.fileURL?.path, FileManager.default.fileExists(atPath: path),
+                !FileManager.default.isWritableFile(atPath: path) {
+                isLocked = true
+                updateEditable()
+            }
             statusBar.update()
             updatePosition()
             updateGutterWidth()
@@ -144,7 +190,8 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSText
     // MARK: Setup
 
     private func buildLayout(in window: NSWindow) {
-        divider.boxType = .separator
+        divider.onDrag = { [weak self] y in self?.moveDivider(to: y) }
+        divider.onReset = { [weak self] in self?.setSplitRatio(0.5) }
         layoutPanes()
 
         findBar.isHidden = true
@@ -193,11 +240,43 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSText
             constraints += [
                 divider.topAnchor.constraint(equalTo: views[0].bottomAnchor),
                 views[1].topAnchor.constraint(equalTo: divider.bottomAnchor),
-                views[1].heightAnchor.constraint(equalTo: views[0].heightAnchor),
+                // Neither half can be dragged down to nothing.
+                views[0].heightAnchor.constraint(greaterThanOrEqualToConstant: Self.minimumPaneHeight),
+                views[1].heightAnchor.constraint(greaterThanOrEqualToConstant: Self.minimumPaneHeight),
             ]
         }
         NSLayoutConstraint.activate(constraints)
         paneConstraints = constraints
+        splitHeight = nil
+        if views.count > 1 { setSplitRatio(splitRatio) }
+    }
+
+    private static let minimumPaneHeight: CGFloat = 60
+
+    /// Gives the upper pane this share of the height. A share rather than a fixed height, so
+    /// both halves grow and shrink with the window.
+    private func setSplitRatio(_ ratio: CGFloat) {
+        guard panes.count > 1 else { return }
+        splitRatio = min(max(ratio, 0.05), 0.95)
+        splitHeight?.isActive = false
+        let height = panes[0].view.heightAnchor.constraint(equalTo: editorArea.heightAnchor, multiplier: splitRatio)
+        // Weak enough that the minimum heights win in a short window, and that it can never
+        // make the window itself taller.
+        height.priority = .dragThatCannotResizeWindow
+        height.isActive = true
+        splitHeight = height
+    }
+
+    /// Called while the divider is dragged, with the pointer's position in the window.
+    private func moveDivider(to point: NSPoint) {
+        let height = editorArea.bounds.height
+        guard height > 0 else { return }
+        let y = editorArea.convert(point, from: nil).y
+        // The editor area isn't flipped: y counts up from the bottom.
+        let top = editorArea.isFlipped ? y : height - y
+        let least = Self.minimumPaneHeight
+        guard height > 2 * least else { return }
+        setSplitRatio(min(max(top, least), height - least) / height)
     }
 
     /// Connects a new pane to this window and gives it the current settings and syntax.
@@ -214,6 +293,7 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSText
             object: pane.textView)
         configure(pane, from: nil)
         applySyntaxSettings(to: pane, of: document)
+        pane.textView.isEditable = !isLocked && !isBusy
     }
 
     /// Where the caret was when the file was last closed, unless something has already moved it.
@@ -333,15 +413,30 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSText
     }
 
     func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
-        if menuItem.action == #selector(toggleSplit(_:)) {
-            menuItem.state = panes.count > 1 ? .on : .off
+        switch menuItem.action {
+        case #selector(toggleSplit(_:)): menuItem.state = panes.count > 1 ? .on : .off
+        case #selector(toggleLock(_:)): menuItem.state = isLocked ? .on : .off
+        case #selector(goToLastEdit(_:)): return !editPlaces.isEmpty
+        default: break
         }
         return true
     }
 
-    /// Stops or allows typing in every pane.
+    /// Stops typing in every pane while a command works on the text, and allows it again after.
     func setEditable(_ editable: Bool) {
-        for pane in panes { pane.textView.isEditable = editable }
+        isBusy = !editable
+        updateEditable()
+    }
+
+    private func updateEditable() {
+        for pane in panes { pane.textView.isEditable = !isLocked && !isBusy }
+    }
+
+    /// Makes the document read-only, or editable again.
+    @objc func toggleLock(_ sender: Any?) {
+        isLocked.toggle()
+        updateEditable()
+        statusBar.update()
     }
 
     // MARK: Syntax colours
@@ -358,6 +453,7 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSText
         pane.textView.blockComment = definition?.blockComment
         pane.textView.indentWithTabs = definition?.indentWithTabs == true
         pane.textView.indentAfterColon = definition?.indentAfterColon == true
+        pane.textView.isMarkdown = definition?.id == "markdown"
     }
 
     private func adoptSyntax(of document: Document) {
@@ -478,6 +574,8 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSText
 
         layoutManager.removeTemporaryAttribute(.foregroundColor, forCharacterRange: range)
         layoutManager.removeTemporaryAttribute(.backgroundColor, forCharacterRange: range)
+        layoutManager.removeTemporaryAttribute(.underlineStyle, forCharacterRange: range)
+        layoutManager.removeTemporaryAttribute(.underlineColor, forCharacterRange: range)
         let end = NSMaxRange(range)
         var index = Self.firstIndex(in: tokens, endingAfter: range.location) { $0.range }
         while index < tokens.count, tokens[index].range.location < end {
@@ -488,6 +586,8 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSText
             }
             index += 1
         }
+        if style.markTrailingSpaces { markTrailingSpaces(in: range, of: pane) }
+        if style.showColours { underlineColours(in: range, of: pane) }
         if let occurrence {
             let selected = pane.textView.selectedRange()
             var search = range
@@ -508,6 +608,50 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSText
                 layoutManager.addTemporaryAttribute(.backgroundColor, value: Theme.findMatch, forCharacterRange: part)
             }
             index += 1
+        }
+    }
+
+    /// Above this many characters on screen (a file that is one enormous line), the extra
+    /// marks are skipped.
+    private static let markLimit = 200_000
+
+    /// A red background on spaces and tabs at the end of lines, except right behind the caret,
+    /// where they are still being typed.
+    private func markTrailingSpaces(in range: NSRange, of pane: EditorPane) {
+        guard range.length <= Self.markLimit else { return }
+        let caret = pane.textView.selectedRange().location
+        let end = NSMaxRange(range)
+        var run = range.location
+        for index in range.location...end {
+            let c: unichar = index < text.length ? text.character(at: index) : 0x0A
+            if c == 0x20 || c == 0x09, index < end { continue }
+            if c == 0x0A, index > run, index != caret {
+                pane.layoutManager.addTemporaryAttribute(
+                    .backgroundColor, value: Theme.trailingSpace,
+                    forCharacterRange: NSRange(location: run, length: index - run))
+            }
+            run = index + 1
+        }
+    }
+
+    private static let hexColour = try! NSRegularExpression(
+        pattern: "#(?:[0-9a-fA-F]{8}|[0-9a-fA-F]{6}|[0-9a-fA-F]{3})(?![0-9a-zA-Z_])")
+
+    /// A thick underline under each hex colour, in that colour.
+    private func underlineColours(in range: NSRange, of pane: EditorPane) {
+        guard range.length <= Self.markLimit else { return }
+        let visible = text.substring(with: range) as NSString
+        Self.hexColour.enumerateMatches(in: visible as String, range: NSRange(location: 0, length: visible.length)) { match, _, _ in
+            guard let match else { return }
+            var digits = visible.substring(with: NSRange(location: match.range.location + 1, length: match.range.length - 1))
+            if digits.count == 3 { digits = digits.map { "\($0)\($0)" }.joined() }
+            guard let value = UInt64(digits.prefix(6), radix: 16) else { return }
+            let colour = NSColor(
+                srgbRed: CGFloat((value >> 16) & 0xff) / 255, green: CGFloat((value >> 8) & 0xff) / 255,
+                blue: CGFloat(value & 0xff) / 255, alpha: 1)
+            pane.layoutManager.addTemporaryAttributes(
+                [.underlineStyle: NSUnderlineStyle.thick.rawValue, .underlineColor: colour],
+                forCharacterRange: NSRange(location: range.location + match.range.location, length: match.range.length))
         }
     }
 
@@ -567,6 +711,23 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSText
             editedTail = tail
         }
 
+        // Earlier places move with the text; the newest is where this edit ended.
+        for i in editPlaces.indices {
+            if editPlaces[i] >= oldEnd {
+                editPlaces[i] += delta
+            } else if editPlaces[i] > newRange.location {
+                editPlaces[i] = newRange.location
+            }
+        }
+        let here = NSMaxRange(newRange)
+        if let last = editPlaces.last, abs(last - here) < 80 {
+            editPlaces[editPlaces.count - 1] = here
+        } else {
+            editPlaces.append(here)
+            if editPlaces.count > 20 { editPlaces.removeFirst() }
+        }
+        editPlaceIndex = nil
+
         matchesAreCurrent = false
         let index = Self.firstIndex(in: matches, endingAfter: newRange.location) { $0 }
         let firstAfter = matches[index...].firstIndex { $0.location >= oldEnd } ?? matches.count
@@ -617,6 +778,12 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSText
         changed.updateBracketMatch()
         panes.first { $0.textView === changed }?.gutter.needsDisplay = true
         guard changed === textView else { return }
+        if style.markTrailingSpaces, let line = doc?.lineIndex.line(at: changed.selectedRange().location),
+            line != caretLine {
+            // The line the caret left may have spaces at its end that now get marked.
+            caretLine = line
+            decorateVisible(force: true)
+        }
         updateOccurrences()
         updatePosition()
         if !findBar.isHidden { updateFindStatus() }
@@ -652,11 +819,44 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSText
     func showDocumentCounts() {
         guard let index = doc?.lineIndex else { return }
         let whole = NSRange(location: 0, length: text.length)
-        statusBar.setPosition([
+        var parts = [
             Self.count(index.count, "line"), Self.count(TextStats.words(in: text, range: whole), "word"),
             Self.count(whole.length, "character"),
-        ].joined(separator: ", "))
+        ]
+        // The character after the caret, by its Unicode number and name.
+        let caret = activeView.selectedRange().location
+        if caret < text.length,
+            let scalar = text.substring(with: text.rangeOfComposedCharacterSequence(at: caret)).unicodeScalars.first {
+            let code = String(scalar.value, radix: 16, uppercase: true)
+            let padded = String(repeating: "0", count: max(4 - code.count, 0)) + code
+            parts.append("at caret: U+\(padded) \(scalar.properties.name ?? "")")
+        }
+        statusBar.setPosition(parts.joined(separator: ", "))
     }
+
+    // MARK: Places
+
+    /// Goes to where the text was last edited; used again, to the edit before that.
+    @objc func goToLastEdit(_ sender: Any?) {
+        guard !editPlaces.isEmpty else { return NSSound.beep() }
+        var index = (editPlaceIndex ?? editPlaces.count) - 1
+        if index < 0 { index = editPlaces.count - 1 }
+        editPlaceIndex = index
+        let caret = NSRange(location: min(editPlaces[index], text.length), length: 0)
+        textView.setSelectedRange(caret)
+        textView.scrollRangeToVisible(caret)
+        window?.makeFirstResponder(textView)
+    }
+
+    /// Moves the caret to the end of the text and shows it, for a file that grows on disk.
+    func followEnd() {
+        let end = NSRange(location: text.length, length: 0)
+        activeView.setSelectedRange(end)
+        activeView.scrollRangeToVisible(end)
+    }
+
+    /// The colours of the text for printing, when the whole text has been scanned.
+    var printableTokens: [Token] { tokensAreValid ? tokens : [] }
 
     // MARK: Window
 

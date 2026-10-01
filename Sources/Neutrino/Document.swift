@@ -278,7 +278,11 @@ final class Document: NSDocument, NSTextStorageDelegate {
             let onDisk = try? url.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate,
             let known = fileModificationDate, onDisk > known
         else { return }
+        // With the caret on the last line, stay at the end as the file grows, like `tail -f`.
+        let caret = editor?.textView.selectedRange().location ?? 0
+        let follows = textStorage.length > 0 && lineIndex.line(at: caret) == lineIndex.count - 1
         try? revert(toContentsOf: url, ofType: type)
+        if follows { editor?.followEnd() }
     }
 
     // MARK: Syntax
@@ -437,6 +441,18 @@ final class Document: NSDocument, NSTextStorageDelegate {
         let font = NSFont.monospacedSystemFont(ofSize: 10, weight: .regular)
         view.textStorage?.setAttributedString(
             NSAttributedString(string: textStorage.string, attributes: [.font: font, .foregroundColor: NSColor.black]))
+        // Syntax colours too, in their light-background form. Not for a very long text, where
+        // colouring the copy would take a while.
+        if let storage = view.textStorage, storage.length <= 2_000_000, let tokens = editor?.printableTokens {
+            var colours: [Scope: NSColor] = [:]
+            storage.beginEditing()
+            for token in tokens where NSMaxRange(token.range) <= storage.length {
+                let colour = colours[token.scope] ?? Theme.printColor(for: token.scope)
+                colours[token.scope] = colour
+                storage.addAttribute(.foregroundColor, value: colour, range: token.range)
+            }
+            storage.endEditing()
+        }
         return NSPrintOperation(view: view, printInfo: info)
     }
 }
@@ -544,6 +560,8 @@ final class DocumentController: NSDocumentController {
             let textView = document.editor?.textView
         else { return }
         let whole = NSRange(location: 0, length: document.textStorage.length)
+        // A file that can't be written opens locked, and a locked document refuses the text.
+        if document.editor?.isLocked == true { document.editor?.toggleLock(nil) }
         if document.textStorage.string != text {
             textView.replace(whole, with: text)
             textView.setSelectedRange(NSRange(location: 0, length: 0))

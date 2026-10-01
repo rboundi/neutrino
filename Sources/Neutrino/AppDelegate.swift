@@ -49,6 +49,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
 
     // MARK: Menu commands
 
+    @objc func openQuickly(_ sender: Any?) {
+        OpenQuickly.shared.show()
+    }
+
     @objc func showSettings(_ sender: Any?) {
         SettingsWindowController.shared.show()
     }

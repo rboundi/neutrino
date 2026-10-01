@@ -92,6 +92,9 @@ private struct EditorSettings: View {
     @AppStorage(Prefs.detectIndentation) private var detectIndentation = true
     @AppStorage(Prefs.pageGuide) private var pageGuide = 0
     @AppStorage(Prefs.checkSpelling) private var checkSpelling = false
+    @AppStorage(Prefs.indentGuides) private var indentGuides = false
+    @AppStorage(Prefs.markTrailingSpaces) private var markTrailingSpaces = false
+    @AppStorage(Prefs.showColours) private var showColours = false
     @AppStorage(Prefs.trimTrailingWhitespace) private var trimTrailingWhitespace = false
     @AppStorage(Prefs.ensureFinalNewline) private var ensureFinalNewline = false
 
@@ -140,6 +143,9 @@ private struct EditorSettings: View {
                     Text("None").tag(0)
                     ForEach([72, 80, 100, 120], id: \.self) { Text("After column \($0)").tag($0) }
                 }
+                Toggle("Indent guides", isOn: $indentGuides)
+                Toggle("Mark spaces at the end of lines", isOn: $markTrailingSpaces)
+                Toggle("Underline hex colours in their colour", isOn: $showColours)
                 Toggle("Check spelling while typing", isOn: $checkSpelling)
             }
             Section("When saving") {

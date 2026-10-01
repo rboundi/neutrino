@@ -6,7 +6,9 @@ import NeutrinoCore
 final class EditorTextView: NSTextView {
     var style = EditorStyle.current {
         didSet {
-            guard style.pageGuide != oldValue.pageGuide || style.font != oldValue.font else { return }
+            guard style.pageGuide != oldValue.pageGuide || style.font != oldValue.font
+                || style.indentGuides != oldValue.indentGuides || style.tabWidth != oldValue.tabWidth
+            else { return }
             columnWidth = nil
             needsDisplay = true
         }
@@ -18,6 +20,8 @@ final class EditorTextView: NSTextView {
     var blockComment: [String]?
     var indentWithTabs = false
     var indentAfterColon = false
+    /// Whether the document is Markdown, where Return continues a list.
+    var isMarkdown = false
 
     private var currentLineRect = NSRect.zero
 
@@ -70,7 +74,38 @@ final class EditorTextView: NSTextView {
 
     // MARK: Typing
 
+    private static let listItem = try! NSRegularExpression(
+        pattern: "^([ \\t]*)(?:([-*+])|(\\d+)([.)]))[ \\t]+(\\[[ xX]\\][ \\t]+)?")
+
+    /// In a Markdown list, Return starts the next item; on an empty item it ends the list.
+    private func continueList() -> Bool {
+        let selection = selectedRange()
+        guard selection.length == 0 else { return false }
+        let line = text.lineRange(for: NSRange(location: selection.location, length: 0))
+        let head = text.substring(with: NSRange(location: line.location, length: selection.location - line.location)) as NSString
+        guard let match = Self.listItem.firstMatch(in: head as String, range: NSRange(location: 0, length: head.length))
+        else { return false }
+        if match.range.length == head.length {
+            // Nothing but the marker before the caret. With nothing after it either, drop it.
+            let rest = text.substring(with: NSRange(location: selection.location, length: NSMaxRange(line) - selection.location))
+            guard rest.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return false }
+            replace(NSRange(location: line.location, length: head.length), with: "")
+            return true
+        }
+        var marker = head.substring(with: match.range(at: 1))
+        if match.range(at: 2).location != NSNotFound {
+            marker += head.substring(with: match.range(at: 2))
+        } else {
+            let number = Int(head.substring(with: match.range(at: 3))) ?? 0
+            marker += "\(number + 1)" + head.substring(with: match.range(at: 4))
+        }
+        marker += match.range(at: 5).location != NSNotFound ? " [ ] " : " "
+        insertText("\n" + marker, replacementRange: selection)
+        return true
+    }
+
     override func insertNewline(_ sender: Any?) {
+        if isMarkdown, continueList() { return }
         guard style.autoIndent else { return super.insertNewline(sender) }
         let selection = selectedRange()
         let line = text.lineRange(for: NSRange(location: selection.location, length: 0))
@@ -344,6 +379,12 @@ final class EditorTextView: NSTextView {
         let caret = NSRange(location: target.location + min(column, length), length: 0)
         setCursors(all + [caret])
         scrollRangeToVisible(caret)
+    }
+
+    /// Types 1, 2, 3… at the cursors, in order.
+    @objc func insertNumbers(_ sender: Any?) {
+        guard cursors.count > 1 else { return NSSound.beep() }
+        replay { index in super.insertText("\(index + 1)", replacementRange: self.selectedRange()) }
     }
 
     /// Puts a caret at the end of every line of the selection.
@@ -709,9 +750,39 @@ final class EditorTextView: NSTextView {
         type(UUID().uuidString)
     }
 
+    // MARK: Markdown
+
+    @objc func markdownBold(_ sender: Any?) { toggleMark("**") }
+    @objc func markdownItalic(_ sender: Any?) { toggleMark("*") }
+
+    /// Puts `mark` around the selection, or takes it away when it is already there, whether
+    /// the marks are inside the selection or just outside it.
+    private func toggleMark(_ mark: String) {
+        let selection = selectedRange()
+        let size = (mark as NSString).length
+        let inner = text.substring(with: selection) as NSString
+        if inner.length >= 2 * size, inner.hasPrefix(mark), inner.hasSuffix(mark) {
+            let bare = inner.substring(with: NSRange(location: size, length: inner.length - 2 * size))
+            replace(selection, with: bare)
+            return setSelectedRange(NSRange(location: selection.location, length: (bare as NSString).length))
+        }
+        let around = NSRange(location: selection.location - size, length: selection.length + 2 * size)
+        if around.location >= 0, NSMaxRange(around) <= text.length,
+            text.substring(with: NSRange(location: around.location, length: size)) == mark,
+            text.substring(with: NSRange(location: NSMaxRange(selection), length: size)) == mark {
+            replace(around, with: inner as String)
+            return setSelectedRange(NSRange(location: around.location, length: selection.length))
+        }
+        replace(selection, with: mark + (inner as String) + mark)
+        setSelectedRange(NSRange(location: selection.location + size, length: selection.length))
+    }
+
     override func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
-        if menuItem.action == #selector(toggleComment(_:)) {
-            return lineComment != nil || blockComment != nil
+        switch menuItem.action {
+        case #selector(toggleComment(_:)): return lineComment != nil || blockComment != nil
+        case #selector(markdownBold(_:)), #selector(markdownItalic(_:)): return isMarkdown && isEditable
+        case #selector(insertNumbers(_:)): return cursors.count > 1
+        default: break
         }
         return super.validateMenuItem(menuItem)
     }
@@ -746,11 +817,59 @@ final class EditorTextView: NSTextView {
         currentLineRect = rect
     }
 
+    /// Width of one character in the editor font.
+    private func measuredColumnWidth() -> CGFloat {
+        let width = columnWidth ?? (" " as NSString).size(withAttributes: [.font: style.font]).width
+        columnWidth = width
+        return width
+    }
+
+    /// A thin vertical line at the start of each level of indentation, on the lines in `rect`.
+    /// A blank line takes the levels of the line above it, so the lines run through gaps.
+    private func drawIndentGuides(in rect: NSRect) {
+        guard style.indentGuides, let layoutManager, let textContainer, text.length > 0 else { return }
+        let origin = textContainerOrigin
+        let step = measuredColumnWidth() * CGFloat(style.tabWidth)
+        let left = origin.x + textContainer.lineFragmentPadding
+        let tab = style.tabWidth
+        let glyphs = layoutManager.glyphRange(
+            forBoundingRect: rect.offsetBy(dx: -origin.x, dy: -origin.y), in: textContainer)
+        var levels = 0
+        Theme.pageGuide.setFill()
+        layoutManager.enumerateLineFragments(forGlyphRange: glyphs) { fragment, _, _, range, _ in
+            let start = layoutManager.characterIndexForGlyph(at: range.location)
+            if start == 0 || self.text.character(at: start - 1) == 0x0A {
+                // The first piece of a line: count the columns of its indentation.
+                var columns = 0
+                var index = start
+                var blank = true
+                while index < self.text.length {
+                    let c = self.text.character(at: index)
+                    if c == 0x20 {
+                        columns += 1
+                    } else if c == 0x09 {
+                        columns = (columns / tab + 1) * tab
+                    } else {
+                        blank = c == 0x0A
+                        break
+                    }
+                    index += 1
+                }
+                if !blank { levels = columns / tab }
+            }
+            for level in 0..<levels {
+                NSRect(
+                    x: (left + CGFloat(level) * step).rounded(), y: fragment.minY + origin.y, width: 1,
+                    height: fragment.height
+                ).fill(using: .sourceOver)
+            }
+        }
+    }
+
     /// A thin line after the column chosen in Settings. It lines up with text in a fixed-width font.
     private func drawPageGuide(in rect: NSRect) {
         guard style.pageGuide > 0, let textContainer else { return }
-        let width = columnWidth ?? (" " as NSString).size(withAttributes: [.font: style.font]).width
-        columnWidth = width
+        let width = measuredColumnWidth()
         let x = textContainerOrigin.x + textContainer.lineFragmentPadding + width * CGFloat(style.pageGuide)
         Theme.pageGuide.setFill()
         NSRect(x: x.rounded(), y: rect.minY, width: 1, height: rect.height).fill(using: .sourceOver)
@@ -759,6 +878,7 @@ final class EditorTextView: NSTextView {
     override func drawBackground(in rect: NSRect) {
         super.drawBackground(in: rect)
         drawPageGuide(in: rect)
+        drawIndentGuides(in: rect)
         drawBracketMatch()
         guard let line = caretLineRect() else { return }
         currentLineRect = line

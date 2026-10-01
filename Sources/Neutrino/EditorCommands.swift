@@ -112,6 +112,57 @@ extension EditorWindowController {
         alert.beginSheetModal(for: window)
     }
 
+    // MARK: Path or link at the caret
+
+    private static let pathBreaks: NSCharacterSet = {
+        var set = CharacterSet.whitespacesAndNewlines
+        set.insert(charactersIn: "\"'`<>()[]{}|")
+        return set as NSCharacterSet
+    }()
+
+    /// The selection, or the run of text around the caret that could be a path or a link.
+    private func pathAtCaret() -> String {
+        let selection = textView.selectedRange()
+        if selection.length > 0 { return text.substring(with: selection) }
+        var start = selection.location
+        var end = selection.location
+        while start > 0, !Self.pathBreaks.characterIsMember(text.character(at: start - 1)), end - start < 2000 { start -= 1 }
+        while end < text.length, !Self.pathBreaks.characterIsMember(text.character(at: end)), end - start < 2000 { end += 1 }
+        return text.substring(with: NSRange(location: start, length: end - start))
+    }
+
+    /// Opens the link at the caret in the browser, or the file there in a tab. A path may be
+    /// relative to this document's folder and may end in `:line` or `:line:column`.
+    @objc func openPathAtCaret(_ sender: Any?) {
+        var target = pathAtCaret().trimmingCharacters(in: .whitespacesAndNewlines)
+        while let last = target.last, ".,;".contains(last) { target.removeLast() }
+        guard !target.isEmpty else { return NSSound.beep() }
+        if target.range(of: "^[a-zA-Z][a-zA-Z0-9+.-]*://", options: .regularExpression) != nil {
+            guard let url = URL(string: target), ["http", "https", "mailto", "file"].contains(url.scheme?.lowercased() ?? "")
+            else { return NSSound.beep() }
+            NSWorkspace.shared.open(url)
+            return
+        }
+        var position: [Int] = []
+        if let suffix = target.range(of: "(:\\d+){1,2}:?$", options: .regularExpression) {
+            position = target[suffix].split(separator: ":").compactMap { Int($0) }
+            target.removeSubrange(suffix)
+        }
+        let expanded = (target as NSString).expandingTildeInPath
+        let base = doc?.fileURL?.deletingLastPathComponent()
+        let url = expanded.hasPrefix("/") ? URL(fileURLWithPath: expanded) : base?.appendingPathComponent(expanded)
+        var isFolder: ObjCBool = false
+        guard let url, FileManager.default.fileExists(atPath: url.path, isDirectory: &isFolder) else { return NSSound.beep() }
+        if isFolder.boolValue {
+            NSWorkspace.shared.activateFileViewerSelecting([url])
+            return
+        }
+        NSDocumentController.shared.openDocument(withContentsOf: url.standardizedFileURL, display: true) { document, _, _ in
+            guard let line = position.first else { return }
+            (document as? Document)?.editor?.go(toLine: line, column: position.count > 1 ? position[1] : 1)
+        }
+    }
+
     // MARK: Symbols
 
     /// Functions, classes and headings in the document, found with the patterns of its syntax.

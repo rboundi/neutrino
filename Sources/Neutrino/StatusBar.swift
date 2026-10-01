@@ -7,6 +7,7 @@ final class StatusBar: NSView, NSMenuDelegate {
 
     private let position = NSTextField(labelWithString: "")
     private let sizeLabel = NSTextField(labelWithString: "")
+    private lazy var lock = symbolButton("lock.open", "", #selector(toggleLock))
     private let symbols = StatusBar.popup()
     private var symbolList: [Symbol] = []
     private let syntax = StatusBar.popup()
@@ -36,7 +37,8 @@ final class StatusBar: NSView, NSMenuDelegate {
         size.orientation = .horizontal
         size.spacing = 1
 
-        let popups = NSStackView(views: [size, symbols, syntax, lineEnding, encoding])
+        let popups = NSStackView(views: [lock, size, symbols, syntax, lineEnding, encoding])
+        popups.setCustomSpacing(6, after: lock)
         popups.setCustomSpacing(10, after: size)
         popups.orientation = .horizontal
         popups.spacing = 4
@@ -79,13 +81,21 @@ final class StatusBar: NSView, NSMenuDelegate {
 
     /// A small borderless symbol with a click area as tall as the bar, so it is easy to hit.
     private func sizeButton(_ symbol: String, _ label: String, _ step: Int) -> NSButton {
-        let image = NSImage(systemSymbolName: symbol, accessibilityDescription: label)?
+        let button = symbolButton(symbol, label, #selector(changeSize(_:)))
+        button.tag = step
+        return button
+    }
+
+    private static func image(_ symbol: String, _ label: String) -> NSImage {
+        NSImage(systemSymbolName: symbol, accessibilityDescription: label)?
             .withSymbolConfiguration(NSImage.SymbolConfiguration(pointSize: 9, weight: .semibold)) ?? NSImage()
-        let button = NSButton(image: image, target: self, action: #selector(changeSize(_:)))
+    }
+
+    private func symbolButton(_ symbol: String, _ label: String, _ action: Selector) -> NSButton {
+        let button = NSButton(image: Self.image(symbol, label), target: self, action: action)
         button.isBordered = false
         // The same colour as the menus beside it; a grey symbol reads as switched off.
         button.contentTintColor = .labelColor
-        button.tag = step
         button.toolTip = label
         button.setAccessibilityLabel(label)
         button.translatesAutoresizingMaskIntoConstraints = false
@@ -94,6 +104,10 @@ final class StatusBar: NSView, NSMenuDelegate {
             button.heightAnchor.constraint(equalToConstant: 22),
         ])
         return button
+    }
+
+    @objc private func toggleLock() {
+        editor?.toggleLock(nil)
     }
 
     @objc private func showCounts() {
@@ -111,6 +125,11 @@ final class StatusBar: NSView, NSMenuDelegate {
     /// Shows the document's current syntax, line endings and encoding.
     func update() {
         sizeLabel.stringValue = "\(Int(EditorStyle.current.fontSize)) pt"
+        let locked = editor?.isLocked == true
+        let label = locked ? "Read-only. Click to allow editing." : "Click to make the document read-only."
+        lock.image = Self.image(locked ? "lock.fill" : "lock.open", label)
+        lock.toolTip = label
+        lock.setAccessibilityLabel(locked ? "Locked" : "Unlocked")
         guard let document = editor?.doc else { return }
         syntax.item(at: 0)?.title = document.syntax?.definition.name ?? "Plain Text"
         symbols.isHidden = document.syntax?.definition.symbols?.isEmpty ?? true

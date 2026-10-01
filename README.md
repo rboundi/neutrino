@@ -21,14 +21,17 @@
 - Matching bracket highlight, <kbd>⇧</kbd><kbd>⌘</kbd><kbd>M</kbd> to jump to it
 - Other occurrences of the selected word are marked
 - Word completion from the document (<kbd>⌥</kbd><kbd>Esc</kbd>)
-- Split editor: two views of the same document (<kbd>⌘</kbd><kbd>\</kbd>)
-- Optional page guide and spell checking
-- Text size buttons in the status bar; click the line and column to count lines, words and characters
+- Split editor: two views of the same document, with a divider you can drag (<kbd>⌘</kbd><kbd>\</kbd>)
+- Optional page guide, indent guides, marks on trailing spaces, hex colours underlined in their colour, spell checking
+- Read-only lock in the status bar; a file that can't be written opens locked
+- In Markdown, Return continues a list, and <kbd>⌘</kbd><kbd>B</kbd> / <kbd>⌘</kbd><kbd>I</kbd> make the selection bold or italic
+- Text size buttons in the status bar; click the line and column to count lines, words and characters and to see the Unicode name of the character at the caret
 
 **Cursors and lines**
 - Select the next occurrence with <kbd>⌘</kbd><kbd>D</kbd>
 - Add a cursor above or below with <kbd>⌥</kbd><kbd>⌘</kbd><kbd>↑</kbd> / <kbd>⌥</kbd><kbd>⌘</kbd><kbd>↓</kbd>, or anywhere with <kbd>⌘</kbd>-click
 - Column selection with <kbd>⌥</kbd>-drag
+- Insert Numbers types 1, 2, 3… at the cursors
 - Move, duplicate, delete, join and sort lines, remove duplicates
 - Shift left and right, comment and uncomment, change case
 - Filter the selection through a shell command such as `sort -u` or `jq .` (<kbd>⌥</kbd><kbd>⌘</kbd><kbd>R</kbd>)
@@ -49,12 +52,16 @@
 - Go to Symbol (<kbd>⇧</kbd><kbd>⌘</kbd><kbd>O</kbd>): functions, classes, headings
 - <kbd>⌘</kbd><kbd>1</kbd>…<kbd>⌘</kbd><kbd>9</kbd> to switch tabs, <kbd>⇧</kbd><kbd>⌘</kbd><kbd>T</kbd> to reopen a closed one
 - A reopened file starts where the caret was
+- Open Quickly (<kbd>⌥</kbd><kbd>⌘</kbd><kbd>O</kbd>): type part of a name to jump to a tab or a recent file
+- Go to Last Edit (<kbd>⌃</kbd><kbd>-</kbd>), and back through earlier edits
+- Open the path or link at the caret (<kbd>⌃</kbd><kbd>⌘</kbd><kbd>O</kbd>), including `file:line`
 
 **Files**
 - Autosave, with macOS versions. Can be turned off in Settings
 - Unsaved text is recovered after a crash
 - Encoding, byte order mark and line endings are preserved; change them from the status bar
-- Live reload when a file changes on disk
+- Live reload when a file changes on disk; with the caret on the last line it follows the end, like `tail -f`
+- Printing keeps the syntax colours
 - Compare with Saved shows a diff against the file on disk; Compare with Tab against another open document
 - `.editorconfig` support
 - Optional trailing-space removal and final line break on save
@@ -123,6 +130,10 @@ This installs the app to `/Applications` and links the `neutrino` command into `
 | Comment or uncomment | <kbd>⌘</kbd><kbd>/</kbd> |
 | Filter Through Command | <kbd>⌥</kbd><kbd>⌘</kbd><kbd>R</kbd> |
 | Complete word | <kbd>⌥</kbd><kbd>Esc</kbd> |
+| Open Quickly | <kbd>⌥</kbd><kbd>⌘</kbd><kbd>O</kbd> |
+| Open path or link at caret | <kbd>⌃</kbd><kbd>⌘</kbd><kbd>O</kbd> |
+| Go to last edit | <kbd>⌃</kbd><kbd>-</kbd> |
+| Bold / italic in Markdown | <kbd>⌘</kbd><kbd>B</kbd> / <kbd>⌘</kbd><kbd>I</kbd> |
 | Split editor | <kbd>⌘</kbd><kbd>\</kbd> |
 | Preview in MDReader | <kbd>⌥</kbd><kbd>⌘</kbd><kbd>P</kbd> |
 | Reopen closed tab | <kbd>⇧</kbd><kbd>⌘</kbd><kbd>T</kbd> |
@@ -156,6 +167,7 @@ Sources/Neutrino/
   EditorCommands.swift          Shell filter and the symbol menu
   EditorTextView.swift          Text view: cursors, line commands, brackets, invisibles, line numbers
   FindBar.swift                 Find bar and the Find All list
+  OpenQuickly.swift             Panel for jumping to a tab or a recent file
   StatusBar.swift               Status bar and its menus
   PackageFolder.swift           Installing and removing downloaded files
   SyntaxStore.swift             Loading and unloading syntaxes

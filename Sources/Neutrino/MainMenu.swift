@@ -30,6 +30,8 @@ enum MainMenu {
         let file = submenu("File", in: main)
         add(file, "New", #selector(NSDocumentController.newDocument(_:)), "n")
         add(file, "Open…", #selector(NSDocumentController.openDocument(_:)), "o")
+        add(file, "Open Quickly…", #selector(AppDelegate.openQuickly(_:)), "o", [.command, .option], target: delegate)
+        add(file, "Open Path or Link at Caret", #selector(EditorWindowController.openPathAtCaret(_:)), "o", [.command, .control])
         // AppKit adds Open Recent after Open… by itself.
         add(file, "Reopen Closed Tab", #selector(DocumentController.reopenClosedTab(_:)), "t", [.command, .shift])
         file.addItem(.separator())
@@ -37,6 +39,7 @@ enum MainMenu {
         add(file, "Save", #selector(NSDocument.save(_:)), "s")
         add(file, "Save As…", #selector(NSDocument.saveAs(_:)), "s", [.command, .shift])
         add(file, "Revert to Saved", #selector(NSDocument.revertToSaved(_:)))
+        add(file, "Read Only", #selector(EditorWindowController.toggleLock(_:)))
         add(file, "Compare with Saved", #selector(Document.compareWithSaved(_:)))
         let compare = NSMenu()
         compare.identifier = compareMenu
@@ -67,6 +70,7 @@ enum MainMenu {
         add(find, "Use Selection for Find", #selector(EditorWindowController.useSelectionForFind(_:)), "e")
         add(edit, "Go to Line…", #selector(EditorWindowController.goToLine(_:)), "l")
         add(edit, "Go to Symbol…", #selector(EditorWindowController.showSymbols(_:)), "o", [.command, .shift])
+        add(edit, "Go to Last Edit", #selector(EditorWindowController.goToLastEdit(_:)), "-", [.control])
         add(edit, "Go to Matching Bracket", #selector(EditorTextView.goToMatchingBracket(_:)), "m", [.command, .shift])
         edit.addItem(.separator())
 
@@ -75,6 +79,7 @@ enum MainMenu {
         add(cursors, "Select Next Occurrence", #selector(EditorTextView.selectNextOccurrence(_:)), "d")
         add(cursors, "Add Cursor Above", #selector(EditorTextView.addCursorAbove(_:)), String(UnicodeScalar(NSUpArrowFunctionKey)!), [.command, .option])
         add(cursors, "Add Cursor Below", #selector(EditorTextView.addCursorBelow(_:)), String(UnicodeScalar(NSDownArrowFunctionKey)!), [.command, .option])
+        add(cursors, "Insert Numbers", #selector(EditorTextView.insertNumbers(_:)))
         add(cursors, "Split Selection into Lines", #selector(EditorTextView.splitSelectionIntoLines(_:)), "l", [.command, .shift])
 
         let lines = NSMenu()
@@ -110,6 +115,11 @@ enum MainMenu {
         transform.addItem(.separator())
         add(transform, "Indentation to Spaces", #selector(EditorTextView.indentationToSpaces(_:)))
         add(transform, "Indentation to Tabs", #selector(EditorTextView.indentationToTabs(_:)))
+
+        let markdown = NSMenu()
+        edit.addItem(withTitle: "Markdown", action: nil, keyEquivalent: "").submenu = markdown
+        add(markdown, "Bold", #selector(EditorTextView.markdownBold(_:)), "b")
+        add(markdown, "Italic", #selector(EditorTextView.markdownItalic(_:)), "i")
 
         let insert = NSMenu()
         edit.addItem(withTitle: "Insert", action: nil, keyEquivalent: "").submenu = insert
