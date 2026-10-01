@@ -21,8 +21,8 @@ if [ $# -eq 0 ]; then
   fi
 fi
 
-# "file:12" or "file:12:3" opens the file with the caret at that line and column. The path goes
-# in a URL, with every byte written as %xx so no character needs special treatment.
+# "file:12" or "file:12:3" opens the file with the caret at that line and column. The position
+# is left in a small file that the app reads when it opens the document.
 if [ $# -eq 1 ] && [ ! -e "$1" ]; then
   file=$(printf '%s' "$1" | sed -E 's/:[0-9]+(:[0-9]+)?$//')
   position=${1#"$file"}
@@ -30,8 +30,9 @@ if [ $# -eq 1 ] && [ ! -e "$1" ]; then
     line=$(printf '%s' "$position" | cut -d: -f2)
     column=$(printf '%s' "$position" | cut -d: -f3)
     case "$file" in /*) ;; *) file="$PWD/$file" ;; esac
-    encoded=$(printf '%s' "$file" | od -An -tx1 | tr -d ' \n' | sed 's/../%&/g')
-    exec open -b "$BUNDLE_ID" "neutrino://open?file=$encoded&line=$line&column=${column:-1}"
+    request="$HOME/Library/Caches/$BUNDLE_ID"
+    mkdir -p "$request" && printf '%s\n%s\n%s\n' "$file" "$line" "${column:-1}" > "$request/goto"
+    set -- "$file"
   fi
 fi
 

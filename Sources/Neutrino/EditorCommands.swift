@@ -50,7 +50,7 @@ extension EditorWindowController {
         // Nothing may change while the command runs, or its output would land in the wrong place.
         textView.isEditable = false
         statusBar.setPosition("Running \(command)…")
-        let finish: (String) -> Void = { [weak self] _ in
+        let finish = { [weak self] in
             guard let self else { return }
             self.textView.isEditable = true
             self.textViewDidChangeSelection(Notification(name: NSTextView.didChangeSelectionNotification))
@@ -59,7 +59,7 @@ extension EditorWindowController {
         do {
             try process.run()
         } catch {
-            finish("")
+            finish()
             return report("The command couldn't be started", error.localizedDescription)
         }
         let queue = DispatchQueue.global(qos: .userInitiated)
@@ -70,7 +70,8 @@ extension EditorWindowController {
         queue.async(group: group) { output = stdout.fileHandleForReading.readDataToEndOfFile() }
         queue.async(group: group) { errors = stderr.fileHandleForReading.readDataToEndOfFile() }
         queue.async {
-            stdin.fileHandleForWriting.write(Data(input.utf8))
+            // Fails harmlessly when the command exits without reading everything, as `head` does.
+            try? stdin.fileHandleForWriting.write(contentsOf: Data(input.utf8))
             try? stdin.fileHandleForWriting.close()
         }
         var timedOut = false
@@ -84,7 +85,7 @@ extension EditorWindowController {
             group.wait()
             DispatchQueue.main.async { [weak self] in
                 timer.cancel()
-                finish("")
+                finish()
                 guard let self else { return }
                 let message = String(decoding: errors, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)
                 if timedOut {
@@ -117,7 +118,7 @@ extension EditorWindowController {
     /// Matches inside comments and strings are left out.
     func symbols() -> [Symbol] {
         guard let syntax = doc?.syntax else { return [] }
-        return syntax.symbols(in: readText).filter { symbol in
+        return syntax.symbols(in: text).filter { symbol in
             let found = Self.firstIndex(in: tokens, endingAfter: symbol.range.location) { $0.range }
             guard found < tokens.count, tokens[found].range.location <= symbol.range.location else { return true }
             switch tokens[found].scope {

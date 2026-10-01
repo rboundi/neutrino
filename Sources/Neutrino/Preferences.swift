@@ -32,12 +32,10 @@ enum Prefs {
     static let trimTrailingWhitespace = "trimTrailingWhitespace"
     static let ensureFinalNewline = "ensureFinalNewline"
     static let autosave = "autosave"
-    static let reopenDocuments = "reopenDocuments"
-    static let openDocuments = "openDocuments"
+    /// The macOS setting that keeps an app's windows, and the unsaved text in them, across a quit.
+    static let keepWindows = "NSQuitAlwaysKeepsWindows"
     static let checkForUpdates = "checkForUpdates"
     static let lastUpdateCheck = "lastUpdateCheck"
-    static let latestVersion = "latestVersion"
-    static let latestVersionURL = "latestVersionURL"
     static let findRegex = "findRegex"
     static let findCaseSensitive = "findCaseSensitive"
     static let findWholeWord = "findWholeWord"
@@ -63,9 +61,20 @@ enum Prefs {
             trimTrailingWhitespace: false,
             ensureFinalNewline: false,
             autosave: true,
-            reopenDocuments: true,
             checkForUpdates: true,
         ])
+    }
+
+    /// Quitting keeps every window and its unsaved text for the next launch, without asking to
+    /// save. This has to be written to the app's own settings: the system-wide setting, which is
+    /// off by default, would otherwise win over a registered default.
+    static func keepWindowsByDefault() {
+        let defaults = UserDefaults.standard
+        let own = Bundle.main.bundleIdentifier.flatMap { defaults.persistentDomain(forName: $0) }
+        guard own?[keepWindows] == nil else { return }
+        // Versions before 1.0.2 had their own "Reopen documents" setting; keep that choice.
+        let reopen = own?["reopenDocuments"] as? Bool ?? true
+        defaults.set(reopen, forKey: keepWindows)
     }
 
     /// Makes the editor text larger or smaller for every document, now and in future.

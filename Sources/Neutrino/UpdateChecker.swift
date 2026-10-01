@@ -22,17 +22,6 @@ enum UpdateChecker {
         Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "0"
     }
 
-    /// A newer release seen by an earlier check, so the badge survives relaunches between checks.
-    static var knownUpdate: Release? {
-        let defaults = UserDefaults.standard
-        guard defaults.bool(forKey: Prefs.checkForUpdates),
-            let version = defaults.string(forKey: Prefs.latestVersion),
-            let url = defaults.url(forKey: Prefs.latestVersionURL),
-            isNewer(version, than: currentVersion)
-        else { return nil }
-        return Release(version: version, url: url)
-    }
-
     static func checkIfDue(completion: @escaping (Release) -> Void) {
         let defaults = UserDefaults.standard
         guard defaults.bool(forKey: Prefs.checkForUpdates) else { return }
@@ -68,17 +57,8 @@ enum UpdateChecker {
                 result = .failed(error?.localizedDescription ?? "GitHub returned status \(status).")
             }
             DispatchQueue.main.async {
-                let defaults = UserDefaults.standard
-                switch result {
-                case .available(let release):
-                    defaults.set(release.version, forKey: Prefs.latestVersion)
-                    defaults.set(release.url, forKey: Prefs.latestVersionURL)
-                    defaults.set(Date().timeIntervalSince1970, forKey: Prefs.lastUpdateCheck)
-                case .upToDate:
-                    defaults.removeObject(forKey: Prefs.latestVersion)
-                    defaults.set(Date().timeIntervalSince1970, forKey: Prefs.lastUpdateCheck)
-                case .failed:
-                    break
+                if case .failed = result {} else {
+                    UserDefaults.standard.set(Date().timeIntervalSince1970, forKey: Prefs.lastUpdateCheck)
                 }
                 completion(result)
             }

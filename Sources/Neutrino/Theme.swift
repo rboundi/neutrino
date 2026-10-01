@@ -52,7 +52,6 @@ enum Theme {
 
 /// A theme file turned into colours.
 struct LoadedTheme {
-    let id: String
     let dark: Bool
     let background: NSColor
     let text: NSColor
@@ -70,7 +69,6 @@ struct LoadedTheme {
             let rgb = ThemeDefinition.rgb(hex) ?? (0, 0, 0)
             return NSColor(srgbRed: rgb.red, green: rgb.green, blue: rgb.blue, alpha: 1)
         }
-        id = definition.id
         dark = definition.dark
         background = color(definition.background)
         text = color(definition.text)
@@ -106,16 +104,28 @@ final class ThemeStore {
         },
         label: \.name)
 
+    /// The theme in use, looked up once and kept until the setting or the files change.
     private var cached: (id: String, theme: LoadedTheme?)?
 
     private init() {
         files.onChange = { [weak self] _ in self?.cached = nil }
+        // Only a change of theme drops the cached one, not every settings change.
+        NotificationCenter.default.addObserver(
+            forName: UserDefaults.didChangeNotification, object: nil, queue: .main
+        ) { [weak self] _ in
+            if let cached = self?.cached, cached.id != Self.chosenID { self?.cached = nil }
+        }
+    }
+
+    private static var chosenID: String {
+        UserDefaults.standard.string(forKey: Prefs.theme) ?? ""
     }
 
     /// The installed theme chosen in Settings; nil means the built-in colours.
+    /// Colour lookups call this for every token, so it must not read the settings each time.
     var active: LoadedTheme? {
-        let id = UserDefaults.standard.string(forKey: Prefs.theme) ?? ""
-        if let cached, cached.id == id { return cached.theme }
+        if let cached { return cached.theme }
+        let id = Self.chosenID
         let theme = id.isEmpty ? nil : files.data(for: id).flatMap(LoadedTheme.init(data:))
         cached = (id, theme)
         return theme

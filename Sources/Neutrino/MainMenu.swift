@@ -27,9 +27,7 @@ enum MainMenu {
         let file = submenu("File", in: main)
         add(file, "New", #selector(NSDocumentController.newDocument(_:)), "n")
         add(file, "Open…", #selector(NSDocumentController.openDocument(_:)), "o")
-        let recent = NSMenu()
-        recent.delegate = delegate
-        file.addItem(withTitle: "Open Recent", action: nil, keyEquivalent: "").submenu = recent
+        // AppKit adds Open Recent after Open… by itself.
         add(file, "Reopen Closed Tab", #selector(DocumentController.reopenClosedTab(_:)), "t", [.command, .shift])
         file.addItem(.separator())
         add(file, "Close", #selector(NSWindow.performClose(_:)), "w")

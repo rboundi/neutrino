@@ -134,7 +134,7 @@ extension EditorWindowController: FindBarDelegate {
         guard let query else { return false }
         if !matchesAreCurrent {
             _ = findGeneration.next()
-            matches = query.ranges(in: readText, range: searchRange)
+            matches = query.ranges(in: text, range: searchRange)
             matchesAreCurrent = true
             if !findBar.isHidden { decorateVisible(force: true) }
         }
@@ -242,7 +242,7 @@ extension EditorWindowController: FindBarDelegate {
         var editors = [self]
         if findBar.scope == .allDocuments {
             editors += otherEditors
-            let counts = editors.map { query.ranges(in: $0.readText).count }
+            let counts = editors.map { query.ranges(in: $0.text).count }
             let documents = counts.filter { $0 > 0 }.count
             if documents > 1 {
                 let alert = NSAlert()
@@ -281,7 +281,7 @@ extension EditorWindowController: FindBarDelegate {
         let editors = findBar.scope == .allDocuments ? [self] + otherEditors : [self]
         for editor in editors {
             guard let document = editor.doc else { continue }
-            let text = editor.readText
+            let text = editor.text
             let range = editor === self ? searchRange : NSRange(location: 0, length: text.length)
             let found = query.ranges(in: text, range: range)
             guard !found.isEmpty else { continue }

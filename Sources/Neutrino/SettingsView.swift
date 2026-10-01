@@ -57,7 +57,7 @@ private struct Page<Content: View>: View {
 }
 
 private struct GeneralSettings: View {
-    @AppStorage(Prefs.reopenDocuments) private var reopenDocuments = true
+    @AppStorage(Prefs.keepWindows) private var keepWindows = true
     @AppStorage(Prefs.autosave) private var autosave = true
     @AppStorage(Prefs.checkForUpdates) private var checkForUpdates = true
 
@@ -65,7 +65,7 @@ private struct GeneralSettings: View {
         Page {
             Section {
                 Toggle("Save changes automatically", isOn: $autosave)
-                Toggle("Reopen documents from last session", isOn: $reopenDocuments)
+                Toggle("Keep windows and unsaved text when quitting", isOn: $keepWindows)
                 Toggle("Check for updates", isOn: $checkForUpdates)
                 HStack {
                     Text("Command line tool")

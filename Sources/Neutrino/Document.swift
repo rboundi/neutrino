@@ -97,7 +97,8 @@ final class Document: NSDocument, NSTextStorageDelegate {
 
     override func read(from url: URL, ofType typeName: String) throws {
         let size = (try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0
-        if size >= Self.largeFileLimit {
+        // Asked when the file is first opened, not when it is reloaded after changing on disk.
+        if size >= Self.largeFileLimit, windowControllers.isEmpty {
             // Text is kept in memory as UTF-16 with layout data on top, so a large file needs
             // several times its size. Say so before the Mac starts swapping.
             let megabytes = { (bytes: Int) in ByteCountFormatter.string(fromByteCount: Int64(bytes), countStyle: .memory) }
@@ -335,9 +336,17 @@ final class Document: NSDocument, NSTextStorageDelegate {
             let saved = TextCodec.decode(data, as: encoding)?.text
         else { return NSSound.beep() }
         let name = url.lastPathComponent
-        guard let diff = UnifiedDiff.make(
-            old: saved, new: textStorage.string, oldName: "\(name) (saved)", newName: "\(name) (now)")
-        else {
+        let current = textStorage.string
+        // Off the main thread: comparing two very different long files takes a while.
+        DispatchQueue.global(qos: .userInitiated).async {
+            let diff = UnifiedDiff.make(
+                old: saved, new: current, oldName: "\(name) (saved)", newName: "\(name) (now)")
+            DispatchQueue.main.async { [weak self] in self?.showComparison(diff, of: name) }
+        }
+    }
+
+    private func showComparison(_ diff: String?, of name: String) {
+        guard let diff else {
             let alert = NSAlert()
             alert.messageText = "No differences"
             alert.informativeText = "The text is the same as the saved file."
@@ -416,12 +425,127 @@ final class DocumentController: NSDocumentController {
         if closed.count > 20 { closed.removeFirst() }
     }
 
+    /// Unsaved text kept across a quit when files aren't saved automatically.
+    private struct Draft: Codable {
+        /// The file the text belongs to; nil for a document that was never saved.
+        var path: String?
+        var text: String
+    }
+
+    private static let draftsFile = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+        .appendingPathComponent("Neutrino/unsaved.json")
+
+    /// Quitting doesn't ask about unsaved documents; only closing a tab does. The unsaved text
+    /// is written aside here and put back by `restoreDrafts` at the next launch.
+    ///
+    /// With files saved automatically, macOS already keeps everything across a quit, so this
+    /// only steps in when that setting is off. With "Keep windows and unsaved text when
+    /// quitting" off, or if the text can't be written, the usual questions are asked.
+    override func reviewUnsavedDocuments(
+        withAlertTitle title: String?, cancellable: Bool, delegate: Any?, didReviewAllSelector: Selector?,
+        contextInfo: UnsafeMutableRawPointer?
+    ) {
+        let review = {
+            super.reviewUnsavedDocuments(
+                withAlertTitle: title, cancellable: cancellable, delegate: delegate,
+                didReviewAllSelector: didReviewAllSelector, contextInfo: contextInfo)
+        }
+        guard UserDefaults.standard.bool(forKey: Prefs.keepWindows), !Document.autosavesInPlace,
+            let delegate = delegate as AnyObject?, let selector = didReviewAllSelector
+        else { return review() }
+
+        // A document that was never saved counts whenever it has text: once macOS has copied it
+        // aside it no longer reports itself as edited.
+        let unsaved = documents.compactMap { $0 as? Document }.filter {
+            $0.isDocumentEdited || ($0.fileURL == nil && $0.textStorage.length > 0)
+        }
+        let drafts = unsaved.map {
+            Draft(path: $0.fileURL?.path, text: $0.textStorage.string)
+        }
+        if drafts.isEmpty {
+            // Nothing is unsaved, so there is nothing to keep and nothing to ask about.
+            try? FileManager.default.removeItem(at: Self.draftsFile)
+        } else {
+            do {
+                try FileManager.default.createDirectory(
+                    at: Self.draftsFile.deletingLastPathComponent(), withIntermediateDirectories: true)
+                try JSONEncoder().encode(drafts).write(to: Self.draftsFile, options: .atomic)
+            } catch {
+                return review()
+            }
+        }
+        // The callback is documentController:didReviewAll:contextInfo:, which Swift can only
+        // reach through its implementation pointer.
+        typealias Callback = @convention(c) (AnyObject, Selector, NSDocumentController, Bool, UnsafeMutableRawPointer?) -> Void
+        let callback = unsafeBitCast(delegate.method(for: selector), to: Callback.self)
+        callback(delegate, selector, self, true, contextInfo)
+    }
+
+    /// Puts back the unsaved text written at the last quit, as unsaved changes.
+    func restoreDrafts() {
+        guard let data = try? Data(contentsOf: Self.draftsFile),
+            let drafts = try? JSONDecoder().decode([Draft].self, from: data)
+        else { return }
+        let pending = DispatchGroup()
+        for draft in drafts {
+            if let path = draft.path {
+                guard FileManager.default.fileExists(atPath: path) else {
+                    // The file is gone; keep the text as a new document rather than lose it.
+                    restore(draft.text, in: nil)
+                    continue
+                }
+                pending.enter()
+                openDocument(withContentsOf: URL(fileURLWithPath: path), display: true) { document, _, _ in
+                    self.restore(draft.text, in: document as? Document)
+                    pending.leave()
+                }
+            } else {
+                restore(draft.text, in: nil)
+            }
+        }
+        // Only once every draft is back in a document; until then the file is the only copy.
+        pending.notify(queue: .main) {
+            try? FileManager.default.removeItem(at: Self.draftsFile)
+        }
+    }
+
+    private func restore(_ text: String, in document: Document?) {
+        let blank = documents.compactMap { $0 as? Document }.first(where: \.isBlank)
+        guard let document = document ?? blank ?? (try? openUntitledDocumentAndDisplay(true)) as? Document,
+            let textView = document.editor?.textView
+        else { return }
+        let whole = NSRange(location: 0, length: document.textStorage.length)
+        if document.textStorage.string != text {
+            textView.replace(whole, with: text)
+            textView.setSelectedRange(NSRange(location: 0, length: 0))
+        }
+    }
+
     @objc func reopenClosedTab(_ sender: Any?) {
         while let url = closed.popLast() {
             guard FileManager.default.fileExists(atPath: url.path) else { continue }
             return openDocument(withContentsOf: url, display: true) { _, _, _ in }
         }
         NSSound.beep()
+    }
+
+    /// Where `neutrino file:12:3` leaves the line and column for the app to pick up.
+    static let positionRequest = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
+        .appendingPathComponent("\(Bundle.main.bundleIdentifier ?? "com.movinapp.neutrino.macos")/goto")
+
+    /// The line and column the `neutrino` command asked for when it opened this file a moment
+    /// ago. The request is a file with the path, line and column on three lines; it is used once.
+    private static func requestedPosition(for url: URL) -> (line: Int, column: Int)? {
+        let request = positionRequest
+        guard let written = try? request.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate,
+            let text = try? String(contentsOf: request, encoding: .utf8)
+        else { return nil }
+        let fields = text.components(separatedBy: "\n")
+        guard fields.count >= 3, URL(fileURLWithPath: fields[0]).resolvingSymlinksInPath() == url.resolvingSymlinksInPath()
+        else { return nil }
+        try? FileManager.default.removeItem(at: request)
+        guard Date().timeIntervalSince(written) < 30, let line = Int(fields[1]) else { return nil }
+        return (line, Int(fields[2]) ?? 1)
     }
 
     override func validateUserInterfaceItem(_ item: NSValidatedUserInterfaceItem) -> Bool {
@@ -444,7 +568,11 @@ final class DocumentController: NSDocumentController {
         let blanks = documents.compactMap { $0 as? Document }.filter(\.isBlank)
         super.openDocument(withContentsOf: url, display: displayDocument) { document, alreadyOpen, error in
             if document != nil && !alreadyOpen {
-                blanks.forEach { $0.close() }
+                // Checked again here: text may have gone into one of them while the file opened.
+                blanks.filter(\.isBlank).forEach { $0.close() }
+            }
+            if let position = Self.requestedPosition(for: url) {
+                (document as? Document)?.editor?.go(toLine: position.line, column: position.column)
             }
             completionHandler(document, alreadyOpen, error)
         }

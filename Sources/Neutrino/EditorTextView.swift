@@ -50,6 +50,11 @@ final class EditorTextView: NSTextView {
 
     /// Replaces text as one undoable edit.
     func replace(_ range: NSRange, with string: String) {
+        // An edit made outside the cursor replay moves the text under the extra cursors.
+        if !replaying, !cursors.isEmpty {
+            cursors = []
+            needsDisplay = true
+        }
         guard shouldChangeText(in: range, replacementString: string) else { return }
         textStorage?.replaceCharacters(in: range, with: string)
         didChangeText()
@@ -176,14 +181,15 @@ final class EditorTextView: NSTextView {
 
     // MARK: Multiple cursors
 
+    private static let cursorLimit = 1000
+
     var cursorCount: Int { max(cursors.count, 1) }
 
     /// Sorted, with overlapping and duplicate ranges merged.
     private static func merge(_ ranges: [NSRange]) -> [NSRange] {
         var result: [NSRange] = []
         for range in ranges.sorted(by: { $0.location < $1.location }) {
-            if let last = result.last, range.location < NSMaxRange(last) || range == last
-                || (range.location == NSMaxRange(last) && (range.length == 0 || last.length == 0) && range.location == last.location) {
+            if let last = result.last, range.location < NSMaxRange(last) || range == last {
                 result[result.count - 1] = NSUnionRange(last, range)
             } else {
                 result.append(range)
@@ -193,7 +199,12 @@ final class EditorTextView: NSTextView {
     }
 
     private func setCursors(_ ranges: [NSRange]) {
-        let merged = Self.merge(ranges)
+        var merged = Self.merge(ranges)
+        // Every keystroke is replayed once per cursor, so the number has to stay reasonable.
+        if merged.count > Self.cursorLimit {
+            merged = Array(merged.prefix(Self.cursorLimit))
+            NSSound.beep()
+        }
         settingCursors = true
         defer {
             settingCursors = false
@@ -234,7 +245,8 @@ final class EditorTextView: NSTextView {
         var shift = 0
         for (index, cursor) in cursors.enumerated() {
             let before = text.length
-            let range = NSRange(location: min(cursor.location + shift, before), length: cursor.length)
+            let location = min(max(cursor.location + shift, 0), before)
+            let range = NSRange(location: location, length: min(cursor.length, before - location))
             super.setSelectedRanges([NSValue(range: range)], affinity: .downstream, stillSelecting: false)
             action(index)
             shift += text.length - before
@@ -343,6 +355,13 @@ final class EditorTextView: NSTextView {
         setCursors(carets)
     }
 
+    /// The characters in the part of the view that is showing.
+    private func visibleCharacters() -> NSRange {
+        guard let layoutManager, let textContainer else { return NSRange(location: 0, length: 0) }
+        let glyphs = layoutManager.glyphRange(forBoundingRect: visibleRect, in: textContainer)
+        return layoutManager.characterRange(forGlyphRange: glyphs, actualGlyphRange: nil)
+    }
+
     private func caretRect(at index: Int) -> NSRect? {
         guard let layoutManager else { return nil }
         var fragment: NSRect
@@ -370,8 +389,12 @@ final class EditorTextView: NSTextView {
         super.draw(dirtyRect)
         guard cursors.count > 1 else { return }
         let system = selectedRange()
+        let visible = visibleCharacters()
         insertionPointColor.setFill()
-        for cursor in cursors where cursor.length == 0 && cursor != system {
+        // Only carets on screen: asking for the position of a distant one would lay out
+        // everything up to it.
+        for cursor in cursors where cursor.length == 0 && cursor != system
+            && cursor.location >= visible.location && cursor.location <= NSMaxRange(visible) {
             caretRect(at: cursor.location)?.fill()
         }
     }
@@ -426,8 +449,9 @@ final class EditorTextView: NSTextView {
 
     private func drawBracketMatch() {
         guard let (first, second) = bracketPair, let layoutManager, let textContainer else { return }
+        let visible = visibleCharacters()
         Theme.bracketMatch.setFill()
-        for index in [first, second] where index < text.length {
+        for index in [first, second] where index < text.length && NSLocationInRange(index, visible) {
             let glyphs = layoutManager.glyphRange(forCharacterRange: NSRange(location: index, length: 1), actualCharacterRange: nil)
             var rect = layoutManager.boundingRect(forGlyphRange: glyphs, in: textContainer)
             rect.origin.x += textContainerOrigin.x

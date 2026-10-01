@@ -178,7 +178,11 @@ public final class CompiledSyntax {
     /// `previous` holds the old tokens with their positions already moved to fit the new text,
     /// and `edited` is the part of the new text that changed. Scanning restarts a line before the
     /// change and stops as soon as it produces a token the old scan also had after the change;
-    /// from there on the two scans are bound to agree, so the old tokens are kept.
+    /// from there on the two scans agree, so the old tokens are kept.
+    ///
+    /// A rule that matches across several lines and only matches once its end is typed (a quoted
+    /// HTML attribute value, for instance) can change tokens further back than the restart point.
+    /// The editor covers that with a full scan once typing pauses.
     public func retokenize(
         _ string: NSString, previous: [Token], edited: NSRange, isCancelled: () -> Bool = { false }
     ) -> [Token] {
@@ -186,10 +190,14 @@ public final class CompiledSyntax {
         let editStart = min(edited.location, length)
         let editEnd = min(NSMaxRange(edited), length)
 
-        // A rule can look ahead past a line break, so begin one line early.
+        // A rule can look ahead past white space and line breaks ("name" followed by "(" on a
+        // later line), so begin at the last line before the edit that has text on it.
         var restart = string.lineRange(for: NSRange(location: editStart, length: 0)).location
-        if restart > 0 {
-            restart = string.lineRange(for: NSRange(location: restart - 1, length: 0)).location
+        while restart > 0 {
+            let line = string.lineRange(for: NSRange(location: restart - 1, length: 0))
+            restart = line.location
+            let blank = string.substring(with: line).allSatisfy(\.isWhitespace)
+            if !blank { break }
         }
         // A token that reaches across that point has to be rescanned from its own start.
         var keep = Self.firstIndex(in: previous, endingAfter: restart)

@@ -50,7 +50,7 @@
 - Compare with Saved shows a diff against the file on disk
 - `.editorconfig` support
 - Optional trailing-space removal and final line break on save
-- Tabs are restored on relaunch
+- Quitting never asks to save: windows and unsaved text come back at the next launch. Only closing a tab asks
 
 **Syntaxes**
 - Installed from **Settings → Syntaxes** or the status bar, loaded only while in use

@@ -31,6 +31,8 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSText
     static let highlightLimit = 4_000_000
     /// A scan that takes longer than this many seconds is abandoned and colours are turned off.
     static let highlightTimeout = 5.0
+    /// Seconds without typing before the whole text is scanned again.
+    static let fullScanDelay = 1.0
     /// Above this, background work waits for a pause in typing.
     static let debounceLimit = 400_000
 
@@ -81,8 +83,6 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSText
     /// The text without the copy that `NSTextView.string` makes.
     var text: NSMutableString { textView.textStorage!.mutableString }
 
-    /// The text for reading.
-    var readText: NSString { text }
 
     init(document: Document) {
         let container = NSTextContainer(size: NSSize(width: 0, height: CGFloat.greatestFiniteMagnitude))
@@ -134,6 +134,12 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSText
         statusBar.update()
         updatePosition()
         window.makeFirstResponder(textView)
+        // The first layout leaves the view scrolled past the space above the first line.
+        DispatchQueue.main.async { [weak self] in
+            // Not when something has already moved the caret, such as `neutrino file:42`.
+            guard let self, self.textView.selectedRange().location == 0 else { return }
+            self.textView.scroll(NSPoint(x: 0, y: 0))
+        }
     }
 
     required init?(coder: NSCoder) { fatalError() }
@@ -159,7 +165,7 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSText
         textView.smartInsertDeleteEnabled = false
         textView.backgroundColor = Theme.background
         textView.insertionPointColor = Theme.text
-        textView.textContainerInset = NSSize(width: 2, height: 4)
+        textView.textContainerInset = NSSize(width: 2, height: 10)
         textView.isVerticallyResizable = true
         textView.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
     }
@@ -362,9 +368,25 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSText
                     self.tokensAreValid = !gaveUp
                     self.editedStart = nil
                     self.decorateVisible(force: true)
+                    if previous != nil { self.scheduleFullScan() }
                 }
             }
         }
+    }
+
+    /// Scans the whole text again once typing has paused. The quick rescan after each edit
+    /// starts just before the edit, so it can miss a token further back that the edit completed.
+    private func scheduleFullScan() {
+        NSObject.cancelPreviousPerformRequests(withTarget: self, selector: #selector(fullScan), object: nil)
+        // Scanning a large file takes a while, so wait for a longer pause there.
+        let large = (doc?.textStorage.length ?? 0) > Self.debounceLimit
+        perform(#selector(fullScan), with: nil, afterDelay: large ? Self.fullScanDelay * 3 : Self.fullScanDelay)
+    }
+
+    @objc private func fullScan() {
+        guard let doc, tokensAreValid, editedStart == nil else { return }
+        tokensAreValid = false
+        scheduleHighlight(of: doc)
     }
 
     /// Whether the character is code, as opposed to part of a string or a comment.

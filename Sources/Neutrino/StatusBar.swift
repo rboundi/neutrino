@@ -24,15 +24,16 @@ final class StatusBar: NSView, NSMenuDelegate {
 
         symbols.toolTip = "Symbols"
         symbols.item(at: 0)?.title = "Symbols"
-        // Text size: smaller, the size in points, larger. The size chosen becomes the default.
-        let smaller = sizeButton("textformat.size.smaller", "Smaller text", -1)
-        let larger = sizeButton("textformat.size.larger", "Larger text", 1)
+        // Text size: the size in points with a minus and a plus beside it. The size chosen becomes
+        // the default.
+        let smaller = sizeButton("minus", "Smaller text", -1)
+        let larger = sizeButton("plus", "Larger text", 1)
         sizeLabel.font = .monospacedDigitSystemFont(ofSize: 11, weight: .regular)
         sizeLabel.textColor = .secondaryLabelColor
         sizeLabel.toolTip = "Text size. It is used for every document from now on."
         let size = NSStackView(views: [smaller, sizeLabel, larger])
         size.orientation = .horizontal
-        size.spacing = 2
+        size.spacing = 1
 
         let popups = NSStackView(views: [size, symbols, syntax, lineEnding, encoding])
         popups.setCustomSpacing(10, after: size)
@@ -75,14 +76,21 @@ final class StatusBar: NSView, NSMenuDelegate {
         return popup
     }
 
+    /// A small borderless symbol with a click area as tall as the bar, so it is easy to hit.
     private func sizeButton(_ symbol: String, _ label: String, _ step: Int) -> NSButton {
-        let image = NSImage(systemSymbolName: symbol, accessibilityDescription: label) ?? NSImage()
+        let image = NSImage(systemSymbolName: symbol, accessibilityDescription: label)?
+            .withSymbolConfiguration(NSImage.SymbolConfiguration(pointSize: 9, weight: .semibold)) ?? NSImage()
         let button = NSButton(image: image, target: self, action: #selector(changeSize(_:)))
         button.isBordered = false
-        button.controlSize = .small
+        button.contentTintColor = .secondaryLabelColor
         button.tag = step
         button.toolTip = label
         button.setAccessibilityLabel(label)
+        button.translatesAutoresizingMaskIntoConstraints = false
+        NSLayoutConstraint.activate([
+            button.widthAnchor.constraint(equalToConstant: 20),
+            button.heightAnchor.constraint(equalToConstant: 22),
+        ])
         return button
     }
 
@@ -120,7 +128,7 @@ final class StatusBar: NSView, NSMenuDelegate {
 
         if menu === symbols.menu {
             symbolList = Array((editor?.symbols() ?? []).prefix(1500))
-            let text = editor?.readText
+            let text = editor?.text
             for (index, symbol) in symbolList.enumerated() {
                 let item = menu.addItem(withTitle: symbol.name, action: #selector(pickSymbol(_:)), keyEquivalent: "")
                 item.target = self

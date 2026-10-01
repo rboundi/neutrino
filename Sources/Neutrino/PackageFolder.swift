@@ -76,11 +76,15 @@ final class PackageFolder<Info: Codable & Identifiable> where Info.ID == String 
 
     // MARK: Catalog
 
-    /// Published files: the list fetched last, or the one that shipped with the app.
+    /// Published files: the list fetched last or the one that shipped with the app, whichever
+    /// is newer, so an updated app isn't held back by an old download.
     var catalog: [Info] {
         if let catalogList { return catalogList }
         let bundled = Bundle.main.url(forResource: name, withExtension: "json")
-        let list = [catalogCache, bundled].compactMap { $0 }.lazy
+        func modified(_ url: URL) -> Date {
+            (try? url.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? .distantPast
+        }
+        let list = [catalogCache, bundled].compactMap { $0 }.sorted { modified($0) > modified($1) }.lazy
             .compactMap { try? Data(contentsOf: $0) }
             .compactMap { self.decodeCatalog($0) }
             .first ?? []

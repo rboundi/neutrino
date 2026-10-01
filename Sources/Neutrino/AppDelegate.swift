@@ -3,15 +3,10 @@ import AppKit
 final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenuItemValidation {
     static let shared = AppDelegate()
 
-    /// Files to reopen from the last session, read before anything else is opened.
-    private var filesToRestore: [URL] = []
-
     func applicationWillFinishLaunching(_ notification: Notification) {
         Prefs.register()
+        Prefs.keepWindowsByDefault()
         NSApp.appearance = ThemeStore.shared.appearance
-        NSAppleEventManager.shared().setEventHandler(
-            self, andSelector: #selector(handleURL(_:reply:)), forEventClass: AEEventClass(kInternetEventClass),
-            andEventID: AEEventID(kAEGetURL))
         NotificationCenter.default.addObserver(
             self, selector: #selector(defaultsChanged), name: ThemeStore.didChange, object: nil)
         NSApp.mainMenu = MainMenu.build(delegate: self)
@@ -19,31 +14,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         NotificationCenter.default.addObserver(
             self, selector: #selector(defaultsChanged), name: UserDefaults.didChangeNotification, object: nil)
 
-        let defaults = UserDefaults.standard
-        if defaults.bool(forKey: Prefs.reopenDocuments) {
-            filesToRestore = (defaults.stringArray(forKey: Prefs.openDocuments) ?? [])
-                .map { URL(fileURLWithPath: $0) }
-                .filter { FileManager.default.fileExists(atPath: $0.path) }
-        }
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
-        for url in filesToRestore {
-            NSDocumentController.shared.openDocument(withContentsOf: url, display: true) { _, _, _ in }
+        // After the windows macOS restores, so the text goes back into the same tabs.
+        DispatchQueue.main.async {
+            (NSDocumentController.shared as? DocumentController)?.restoreDrafts()
+            self.addOpenRecentIfMissing()
         }
-        filesToRestore = []
         UpdateChecker.checkIfDue { [weak self] release in self?.offer(release) }
-    }
-
-    func applicationShouldOpenUntitledFile(_ sender: NSApplication) -> Bool {
-        // At launch the restored files take the place of the empty window.
-        filesToRestore.isEmpty
-    }
-
-    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
-        let paths = NSDocumentController.shared.documents.compactMap { $0.fileURL?.path }
-        UserDefaults.standard.set(paths, forKey: Prefs.openDocuments)
-        return .terminateNow
     }
 
     func applicationDidResignActive(_ notification: Notification) {
@@ -85,36 +64,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         window.tabGroup?.selectedWindow = tabs[index]
     }
 
-    /// Handles neutrino://open?file=/path&line=12&column=3, which the `neutrino` command sends
-    /// for `neutrino file:12:3`.
-    @objc private func handleURL(_ event: NSAppleEventDescriptor, reply: NSAppleEventDescriptor) {
-        guard let string = event.paramDescriptor(forKeyword: keyDirectObject)?.stringValue,
-            let components = URLComponents(string: string), components.scheme == "neutrino",
-            components.host == "open"
-        else { return }
-        var values: [String: String] = [:]
-        for item in components.queryItems ?? [] { values[item.name] = item.value }
-        guard let path = values["file"], path.hasPrefix("/") else { return }
-        let line = Int(values["line"] ?? "")
-        let column = Int(values["column"] ?? "") ?? 1
-        NSDocumentController.shared.openDocument(withContentsOf: URL(fileURLWithPath: path), display: true) { document, _, error in
-            if let error {
-                NSApp.presentError(error)
-                return
-            }
-            if let line, let editor = (document as? Document)?.editor {
-                editor.go(toLine: line, column: column)
-            }
-        }
-    }
-
-    @objc func openRecent(_ sender: NSMenuItem) {
-        guard let url = sender.representedObject as? URL else { return }
-        NSDocumentController.shared.openDocument(withContentsOf: url, display: true) { _, _, error in
-            if let error { NSApp.presentError(error) }
-        }
-    }
-
     @objc func openRepository(_ sender: Any?) {
         if let url = URL(string: "https://github.com/\(UpdateChecker.repo)") { NSWorkspace.shared.open(url) }
     }
@@ -126,7 +75,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         return true
     }
 
-    /// Fills File → Open Recent each time it opens.
+    // MARK: Open Recent
+
+    /// macOS 26 adds Open Recent to the File menu by itself. Where the system hasn't, add one.
+    private func addOpenRecentIfMissing() {
+        guard let file = NSApp.mainMenu?.items.first(where: { $0.submenu?.title == "File" })?.submenu else { return }
+        let clear = #selector(NSDocumentController.clearRecentDocuments(_:))
+        let present = file.items.contains { $0.submenu?.items.contains { $0.action == clear } == true }
+        guard !present else { return }
+        let recent = NSMenu(title: "Open Recent")
+        recent.delegate = self
+        let item = NSMenuItem(title: "Open Recent", action: nil, keyEquivalent: "")
+        item.submenu = recent
+        let open = file.items.firstIndex { $0.action == #selector(NSDocumentController.openDocument(_:)) } ?? 0
+        file.insertItem(item, at: open + 1)
+    }
+
     func menuNeedsUpdate(_ menu: NSMenu) {
         menu.removeAllItems()
         let urls = NSDocumentController.shared.recentDocumentURLs
@@ -135,14 +99,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
             item.target = self
             item.representedObject = url
             item.toolTip = (url.path as NSString).abbreviatingWithTildeInPath
-            let icon = NSWorkspace.shared.icon(forFile: url.path)
-            icon.size = NSSize(width: 16, height: 16)
-            item.image = icon
         }
         if !urls.isEmpty { menu.addItem(.separator()) }
-        let clear = menu.addItem(
+        menu.addItem(
             withTitle: "Clear Menu", action: #selector(NSDocumentController.clearRecentDocuments(_:)), keyEquivalent: "")
-        clear.isEnabled = !urls.isEmpty
+    }
+
+    @objc private func openRecent(_ sender: NSMenuItem) {
+        guard let url = sender.representedObject as? URL else { return }
+        NSDocumentController.shared.openDocument(withContentsOf: url, display: true) { _, _, error in
+            if let error { NSApp.presentError(error) }
+        }
     }
 
     // MARK: Command line tool
