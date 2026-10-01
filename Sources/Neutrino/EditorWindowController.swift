@@ -433,6 +433,10 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSText
         syncFindPasteboard()
     }
 
+    func windowDidResignKey(_ notification: Notification) {
+        doc?.autosaveNow()
+    }
+
     override func newWindowForTab(_ sender: Any?) {
         NSDocumentController.shared.newDocument(sender)
     }

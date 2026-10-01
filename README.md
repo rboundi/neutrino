@@ -19,6 +19,8 @@
 - Spaces or tabs, with any tab width. Makefiles and Go files always use tabs
 - Shift lines left and right (<kbd>⌘</kbd><kbd>[</kbd> / <kbd>⌘</kbd><kbd>]</kbd>), comment and uncomment (<kbd>⌘</kbd><kbd>/</kbd>), go to line (<kbd>⌘</kbd><kbd>L</kbd>)
 - A file's encoding, byte order mark and line endings are kept when saving. Change them, or reopen with another encoding, from the status bar
+- Changes are saved automatically a few seconds after you stop typing and when you switch to another window or app. macOS keeps earlier versions (**File → Revert to Saved**)
+- With **Settings → General → Save changes automatically** off, files are only written when you save. Unsaved text is still recovered after a crash
 - Files changed by another app are reloaded when there are no unsaved changes
 - Optionally remove trailing spaces and end the file with a line break when saving
 - Light, dark or system theme

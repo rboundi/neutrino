@@ -28,6 +28,7 @@ enum Prefs {
     static let autoCloseBrackets = "autoCloseBrackets"
     static let trimTrailingWhitespace = "trimTrailingWhitespace"
     static let ensureFinalNewline = "ensureFinalNewline"
+    static let autosave = "autosave"
     static let reopenDocuments = "reopenDocuments"
     static let openDocuments = "openDocuments"
     static let checkForUpdates = "checkForUpdates"
@@ -40,6 +41,8 @@ enum Prefs {
     static let findHistory = "findHistory"
 
     static let defaultFontSize = 13.0
+    /// Seconds without typing before a changed document is saved automatically.
+    static let autosaveDelay = 5.0
 
     static func register() {
         UserDefaults.standard.register(defaults: [
@@ -56,6 +59,7 @@ enum Prefs {
             autoCloseBrackets: true,
             trimTrailingWhitespace: false,
             ensureFinalNewline: false,
+            autosave: true,
             reopenDocuments: true,
             checkForUpdates: true,
         ])

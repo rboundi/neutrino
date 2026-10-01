@@ -41,6 +41,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         return .terminateNow
     }
 
+    func applicationDidResignActive(_ notification: Notification) {
+        for case let document as Document in NSDocumentController.shared.documents {
+            document.autosaveNow()
+        }
+    }
+
     func applicationSupportsSecureRestorableState(_ app: NSApplication) -> Bool { true }
 
     @objc private func defaultsChanged() {

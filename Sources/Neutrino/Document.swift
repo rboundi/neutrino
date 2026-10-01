@@ -32,7 +32,9 @@ final class Document: NSDocument, NSTextStorageDelegate {
             self, selector: #selector(syntaxesChanged), name: SyntaxStore.didChange, object: nil)
     }
 
-    override class var autosavesInPlace: Bool { false }
+    /// With "Save changes automatically" on, edits are written to the file itself and macOS keeps
+    /// versions. With it off, unsaved text is still copied aside so a crash doesn't lose it.
+    override class var autosavesInPlace: Bool { UserDefaults.standard.bool(forKey: Prefs.autosave) }
     override class var readableTypes: [String] { [typeName] }
     override class var writableTypes: [String] { [typeName] }
     override class func isNativeType(_ type: String) -> Bool { true }
@@ -106,7 +108,8 @@ final class Document: NSDocument, NSTextStorageDelegate {
         to url: URL, ofType typeName: String, for saveOperation: NSDocument.SaveOperationType,
         completionHandler: @escaping (Error?) -> Void
     ) {
-        if saveOperation != .autosaveElsewhereOperation {
+        // Only when the user saves: tidying during an automatic save would move text under the caret.
+        if [.saveOperation, .saveAsOperation, .saveToOperation].contains(saveOperation) {
             editor?.tidyBeforeSaving()
         }
         super.save(to: url, ofType: typeName, for: saveOperation, completionHandler: completionHandler)
@@ -123,6 +126,27 @@ final class Document: NSDocument, NSTextStorageDelegate {
             ])
         }
         return data
+    }
+
+    /// Saves now instead of waiting for a pause in typing. Called when the window or the app
+    /// loses focus, so other tools see the current text.
+    @objc func autosaveNow() {
+        NSObject.cancelPreviousPerformRequests(withTarget: self, selector: #selector(autosaveNow), object: nil)
+        guard hasUnautosavedChanges else { return }
+        autosave(withImplicitCancellability: true) { _ in }
+    }
+
+    /// Autosaves once typing has stopped for a moment. Large files wait longer, since writing
+    /// them takes long enough to notice.
+    private func scheduleAutosave() {
+        NSObject.cancelPreviousPerformRequests(withTarget: self, selector: #selector(autosaveNow), object: nil)
+        let delay = textStorage.length > 5_000_000 ? Prefs.autosaveDelay * 6 : Prefs.autosaveDelay
+        perform(#selector(autosaveNow), with: nil, afterDelay: delay)
+    }
+
+    override func close() {
+        NSObject.cancelPreviousPerformRequests(withTarget: self, selector: #selector(autosaveNow), object: nil)
+        super.close()
     }
 
     func setEncoding(_ encoding: String.Encoding) {
@@ -212,6 +236,7 @@ final class Document: NSDocument, NSTextStorageDelegate {
         guard editedMask.contains(.editedCharacters) else { return }
         lineIndex.edited(newRange: editedRange, delta: delta, in: textStorage.mutableString)
         editor?.textDidEdit(newRange: editedRange, delta: delta)
+        scheduleAutosave()
     }
 
     // MARK: Printing

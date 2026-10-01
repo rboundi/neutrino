@@ -58,6 +58,7 @@ private struct Page<Content: View>: View {
 private struct GeneralSettings: View {
     @AppStorage(Prefs.appearance) private var appearance = AppearanceMode.system.rawValue
     @AppStorage(Prefs.reopenDocuments) private var reopenDocuments = true
+    @AppStorage(Prefs.autosave) private var autosave = true
     @AppStorage(Prefs.checkForUpdates) private var checkForUpdates = true
 
     var body: some View {
@@ -69,6 +70,7 @@ private struct GeneralSettings: View {
                 .pickerStyle(.segmented)
             }
             Section {
+                Toggle("Save changes automatically", isOn: $autosave)
                 Toggle("Reopen documents from last session", isOn: $reopenDocuments)
                 Toggle("Check for updates", isOn: $checkForUpdates)
                 HStack {
