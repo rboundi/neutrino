@@ -84,3 +84,20 @@ final class SearchTests: XCTestCase {
         XCTAssertEqual(result.text, "<1> y <22>")
     }
 }
+
+extension SearchTests {
+    func testDigitsAfterDollarUseTheLongestExistingGroup() throws {
+        XCTAssertEqual(try replaced("5", "(\\d)", "$10"), "50")
+        let ten = String(repeating: "(\\w)", count: 10)
+        XCTAssertEqual(try replaced("abcdefghij", ten, "$10$1"), "ja")
+    }
+
+    func testSlowPatternCanBeCancelled() throws {
+        let query = try SearchQuery(pattern: "(a+)+$", options: SearchOptions(regex: true))
+        let text = String(repeating: "a", count: 40) + "b" as NSString
+        let deadline = Date().addingTimeInterval(0.3)
+        let start = Date()
+        _ = query.ranges(in: text) { Date() > deadline }
+        XCTAssertLessThan(Date().timeIntervalSince(start), 3)
+    }
+}

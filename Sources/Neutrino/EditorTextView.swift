@@ -8,6 +8,7 @@ final class EditorTextView: NSTextView {
     var lineComment: String?
     var blockComment: [String]?
     var indentWithTabs = false
+    var indentAfterColon = false
 
     private var currentLineRect = NSRect.zero
 
@@ -60,7 +61,7 @@ final class EditorTextView: NSTextView {
             }
             return insertText("\n" + indent + indentUnit, replacementRange: selection)
         }
-        if before == ":" {
+        if indentAfterColon && before == ":" {
             return insertText("\n" + indent + indentUnit, replacementRange: selection)
         }
         insertText("\n" + indent, replacementRange: selection)
@@ -137,12 +138,18 @@ final class EditorTextView: NSTextView {
         setSelectedRange(NSRange(location: selection.location + 1, length: 0))
     }
 
-    override func paste(_ sender: Any?) {
-        // Keep the text free of CR so line numbers and searches see one kind of line ending.
-        if let pasted = NSPasteboard.general.string(forType: .string), pasted.contains("\r") {
-            return insertText(TextCodec.normalized(pasted), replacementRange: selectedRange())
+    /// Every edit the user makes passes through here: typing, paste, drag and drop, Services.
+    /// Keep the text free of CR so line numbers, searches and saving see one kind of line ending.
+    override func shouldChangeText(inRanges affectedRanges: [NSValue], replacementStrings: [String]?) -> Bool {
+        // Checked as UTF-16, because "\r\n" is a single Character and never equals "\r".
+        if let strings = replacementStrings, strings.contains(where: { $0.utf16.contains(0x0D) }) {
+            // Redo the edits without CR, last range first so earlier ranges stay valid.
+            for (range, string) in zip(affectedRanges, strings).reversed() {
+                insertText(TextCodec.normalized(string), replacementRange: range.rangeValue)
+            }
+            return false
         }
-        super.paste(sender)
+        return super.shouldChangeText(inRanges: affectedRanges, replacementStrings: replacementStrings)
     }
 
     // MARK: Lines
@@ -273,22 +280,29 @@ final class EditorLayoutManager: NSLayoutManager {
     override func drawGlyphs(forGlyphRange glyphsToShow: NSRange, at origin: NSPoint) {
         super.drawGlyphs(forGlyphRange: glyphsToShow, at: origin)
         guard showsInvisibles, let string = textStorage?.mutableString else { return }
+        guard let textView = firstTextView, let container = textView.textContainer else { return }
         let attributes: [NSAttributedString.Key: Any] = [.font: invisiblesFont, .foregroundColor: Theme.invisibles]
-        let range = characterRange(forGlyphRange: glyphsToShow, actualGlyphRange: nil)
-        for index in range.location..<NSMaxRange(range) {
-            let symbol: String
-            switch string.character(at: index) {
-            case 0x20: symbol = "·"
-            case 0x09: symbol = "→"
-            case 0x0A: symbol = "¬"
-            default: continue
+        // Only the part of each line that is on screen: an unwrapped line can be megabytes long.
+        let visible = textView.visibleRect.offsetBy(dx: -origin.x, dy: -origin.y)
+        enumerateLineFragments(forGlyphRange: glyphsToShow) { fragment, _, _, glyphs, _ in
+            let first = self.glyphIndex(for: NSPoint(x: visible.minX, y: fragment.midY), in: container)
+            let last = self.glyphIndex(for: NSPoint(x: visible.maxX, y: fragment.midY), in: container)
+            let shown = NSIntersectionRange(glyphs, NSRange(location: first, length: max(last - first, 0) + 1))
+            guard shown.length > 0 else { return }
+            let range = self.characterRange(forGlyphRange: shown, actualGlyphRange: nil)
+            for index in range.location..<NSMaxRange(range) {
+                let symbol: String
+                switch string.character(at: index) {
+                case 0x20: symbol = "·"
+                case 0x09: symbol = "→"
+                case 0x0A: symbol = "¬"
+                default: continue
+                }
+                let position = self.location(forGlyphAt: self.glyphIndexForCharacter(at: index))
+                symbol.draw(
+                    at: NSPoint(x: origin.x + fragment.minX + position.x, y: origin.y + fragment.minY),
+                    withAttributes: attributes)
             }
-            let glyph = glyphIndexForCharacter(at: index)
-            let fragment = lineFragmentRect(forGlyphAt: glyph, effectiveRange: nil)
-            let position = location(forGlyphAt: glyph)
-            symbol.draw(
-                at: NSPoint(x: origin.x + fragment.minX + position.x, y: origin.y + fragment.minY),
-                withAttributes: attributes)
         }
     }
 }

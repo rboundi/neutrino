@@ -29,6 +29,8 @@ struct Unchecked<Value>: @unchecked Sendable {
 final class EditorWindowController: NSWindowController, NSWindowDelegate, NSTextViewDelegate {
     /// Above this many UTF-16 units a file is shown without colours.
     static let highlightLimit = 4_000_000
+    /// A scan that takes longer than this many seconds is abandoned and colours are turned off.
+    static let highlightTimeout = 5.0
     /// Above this, background work waits for a pause in typing.
     static let debounceLimit = 400_000
 
@@ -46,6 +48,8 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSText
     private let tokenGeneration = Generation()
     private var decorated = NSRange(location: 0, length: 0)
     private var editPending = false
+    /// Set when the syntax proved too slow for this text; cleared when the syntax changes.
+    private var highlightTimedOut = false
 
     // Find state; the logic is in EditorFind.swift.
     var matches: [NSRange] = []
@@ -268,7 +272,9 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSText
         textView.lineComment = definition?.lineComment
         textView.blockComment = definition?.blockComment
         textView.indentWithTabs = definition?.indentWithTabs == true
+        textView.indentAfterColon = definition?.indentAfterColon == true
         tokens = []
+        highlightTimedOut = false
         layoutManager.removeTemporaryAttribute(
             .foregroundColor, forCharacterRange: NSRange(location: 0, length: document.textStorage.length))
         decorated.length = 0
@@ -278,7 +284,7 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSText
     private func scheduleHighlight(of document: Document) {
         let generation = tokenGeneration.next()
         let length = document.textStorage.length
-        guard let syntax = document.syntax, length > 0, length <= Self.highlightLimit else {
+        guard let syntax = document.syntax, !highlightTimedOut, length > 0, length <= Self.highlightLimit else {
             if !tokens.isEmpty {
                 tokens = []
                 decorateVisible(force: true)
@@ -290,9 +296,17 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSText
             guard let self, let document, self.tokenGeneration.isCurrent(generation) else { return }
             let snapshot = Unchecked(value: document.textStorage.mutableString.copy() as! NSString)
             self.workQueue.async {
-                let tokens = syntax.tokenize(snapshot.value) { !self.tokenGeneration.isCurrent(generation) }
+                let deadline = Date().addingTimeInterval(Self.highlightTimeout)
+                var timedOut = false
+                var tokens = syntax.tokenize(snapshot.value) {
+                    timedOut = Date() > deadline
+                    return timedOut || !self.tokenGeneration.isCurrent(generation)
+                }
+                if timedOut { tokens = [] }
+                let gaveUp = timedOut
                 DispatchQueue.main.async {
                     guard self.tokenGeneration.isCurrent(generation) else { return }
+                    self.highlightTimedOut = gaveUp
                     self.tokens = tokens
                     self.decorateVisible(force: true)
                 }

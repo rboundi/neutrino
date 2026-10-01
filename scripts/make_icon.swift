@@ -41,34 +41,60 @@ ctx.saveGState()
 squircle.addClip()
 NSGradient(colors: [color(0x343A6B), color(0x14162B)])!.draw(in: body, angle: -90)
 
-// Lines of code, as coloured bars.
-let rows: [[(CGFloat, UInt32)]] = [
-    [(150, 0xFF7AB2), (230, 0x6BDFFF)],
-    [(90, 0xB281EB), (170, 0xFFFFFF), (120, 0xFF8170)],
-    [(210, 0xFFFFFF), (110, 0xD9C97C)],
-    [(120, 0xFF7AB2), (260, 0x7F8C98)],
-    [(180, 0x6BDFFF)],
-]
-let lineHeight: CGFloat = 44
-for (i, row) in rows.enumerated() {
-    var x = body.minX + 130 + (i == 1 || i == 2 ? 70 : 0)
-    let y = 700 - CGFloat(i) * 92
-    for (width, hex) in row {
-        color(hex, i == 3 ? 0.9 : 1).setFill()
-        NSBezierPath(
-            roundedRect: NSRect(x: x, y: y, width: width, height: lineHeight),
-            xRadius: lineHeight / 2, yRadius: lineHeight / 2
-        ).fill()
-        x += width + 30
+// The Greek letter nu, the symbol for a neutrino, between a pink and a cyan brace.
+// Coordinates are on a 132-unit grid laid over the body, with y pointing down.
+let unit = body.width / 132
+func point(_ x: CGFloat, _ y: CGFloat) -> NSPoint {
+    NSPoint(x: body.minX + x * unit, y: body.maxY - y * unit)
+}
+func stroke(_ path: NSBezierPath, _ hex: UInt32, width: CGFloat) {
+    path.lineWidth = width * unit
+    path.lineCapStyle = .round
+    path.lineJoinStyle = .round
+    withShadow(color(hex, 0.45), blur: 36, y: 0) {
+        color(hex).setStroke()
+        path.stroke()
     }
 }
-
-// Insertion point after the last line.
-withShadow(color(0x6BDFFF, 0.8), blur: 24, y: 0) {
-    color(0xFFFFFF).setFill()
-    NSBezierPath(roundedRect: NSRect(x: body.minX + 340, y: 700 - 4 * 92 - 18, width: 16, height: 80),
-                 xRadius: 8, yRadius: 8).fill()
+func quad(_ path: NSBezierPath, from: (CGFloat, CGFloat), control: (CGFloat, CGFloat), to: (CGFloat, CGFloat)) {
+    // NSBezierPath only has cubic curves; this is the same curve as a quadratic one.
+    let c1 = (from.0 + (control.0 - from.0) * 2 / 3, from.1 + (control.1 - from.1) * 2 / 3)
+    let c2 = (to.0 + (control.0 - to.0) * 2 / 3, to.1 + (control.1 - to.1) * 2 / 3)
+    path.curve(to: point(to.0, to.1), controlPoint1: point(c1.0, c1.1), controlPoint2: point(c2.0, c2.1))
 }
+
+/// A curly brace. `mirror` flips it to make the closing one.
+func brace(mirror: Bool) -> NSBezierPath {
+    func x(_ value: CGFloat) -> CGFloat { mirror ? 132 - value : value }
+    let path = NSBezierPath()
+    path.move(to: point(x(36), 28))
+    quad(path, from: (x(36), 28), control: (x(24), 28), to: (x(24), 40))
+    path.line(to: point(x(24), 56))
+    quad(path, from: (x(24), 56), control: (x(24), 66), to: (x(16), 66))
+    quad(path, from: (x(16), 66), control: (x(24), 66), to: (x(24), 76))
+    path.line(to: point(x(24), 92))
+    quad(path, from: (x(24), 92), control: (x(24), 104), to: (x(36), 104))
+    return path
+}
+stroke(brace(mirror: false), 0xFF7AB2, width: 6)
+stroke(brace(mirror: true), 0x6BDFFF, width: 6)
+
+// Right arm of the nu, bowing outwards and curling back in at the top.
+let arm = NSBezierPath()
+arm.move(to: point(67.2, 86.2))
+arm.curve(to: point(87.1, 54), controlPoint1: point(80.9, 78.8), controlPoint2: point(89.6, 63.9))
+arm.curve(to: point(77.2, 51.5), controlPoint1: point(85.8, 47.8), controlPoint2: point(79.6, 46.5))
+stroke(arm, 0xFFFFFF, width: 6.5)
+
+// Left stem with the small flag at its top, drawn last so the point at the bottom is clean.
+let flag = NSBezierPath()
+flag.move(to: point(44.9, 54))
+quad(flag, from: (44.9, 54), control: (49.9, 47.8), to: (56.1, 49))
+stroke(flag, 0xFFFFFF, width: 6)
+let stem = NSBezierPath()
+stem.move(to: point(56.1, 49))
+stem.line(to: point(67.2, 86.2))
+stroke(stem, 0xFFFFFF, width: 9)
 ctx.restoreGState()
 
 NSGraphicsContext.restoreGraphicsState()

@@ -1,11 +1,12 @@
 {
   "id": "python",
   "name": "Python",
-  "version": 1,
+  "version": 2,
   "extensions": ["py", "pyw", "pyi"],
   "filenames": ["SConstruct", "wscript"],
   "firstLine": "^#!.*\\bpython",
   "lineComment": "#",
+  "indentAfterColon": true,
   "rules": [
     {"scope": "comment", "match": "#.*"},
     {"scope": "string", "begin": "(?i:\\b[rbfu]{1,2})?\"\"\"", "end": "\"\"\"", "escape": "\\\\"},

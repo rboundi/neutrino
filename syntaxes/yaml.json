@@ -1,10 +1,11 @@
 {
   "id": "yaml",
   "name": "YAML",
-  "version": 1,
+  "version": 2,
   "extensions": ["yaml", "yml"],
   "filenames": [".clang-format", ".clang-tidy"],
   "lineComment": "#",
+  "indentAfterColon": true,
   "rules": [
     {"scope": "comment", "match": "(?:^|(?<=\\s))#.*"},
     {"scope": "keyword", "match": "^(?:---|\\.\\.\\.)[ \\t]*$"},

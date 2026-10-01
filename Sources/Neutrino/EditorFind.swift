@@ -165,10 +165,21 @@ extension EditorWindowController: FindBarDelegate {
     func findBarChanged() {
         findMessage = nil
         writeFindPasteboard()
-        if findBar.scope == .selection, selectionScope == nil {
-            selectionScope = textView.selectedRange()
-        }
         refreshMatches()
+    }
+
+    func findBarScopeChanged() {
+        if findBar.scope == .selection {
+            // Each time Selection is chosen it means the text selected now.
+            let selection = textView.selectedRange()
+            if selection.length > 0 {
+                selectionScope = selection
+            } else if selectionScope == nil {
+                findBar.scope = .document
+                NSSound.beep()
+            }
+        }
+        findBarChanged()
     }
 
     func findBarNext(backwards: Bool) {

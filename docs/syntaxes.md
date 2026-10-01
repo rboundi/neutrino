@@ -38,6 +38,7 @@ when it is installed; a rule that isn't a valid regular expression is reported w
 | `blockComment` | no | Start and end markers, used when there is no `lineComment` |
 | `caseInsensitive` | no | `true` to ignore case in every rule |
 | `indentWithTabs` | no | `true` for languages that need tab characters |
+| `indentAfterColon` | no | `true` when a line ending in a colon should indent the next one, as in Python |
 | `rules` | yes | The rules, in order of priority |
 
 ## Rules

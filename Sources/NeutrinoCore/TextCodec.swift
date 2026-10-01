@@ -35,6 +35,7 @@ public enum TextCodec {
         ("UTF-16", .utf16),
         ("UTF-16 LE", .utf16LittleEndian),
         ("UTF-16 BE", .utf16BigEndian),
+        ("UTF-32", .utf32),
         ("Western (ISO Latin 1)", .isoLatin1),
         ("Western (Windows 1252)", .windowsCP1252),
         ("Western (Mac OS Roman)", .macOSRoman),
@@ -67,6 +68,11 @@ public enum TextCodec {
         } else if data.starts(with: [0xEF, 0xBB, 0xBF]) {
             hasBOM = true
             text = String(data: data.dropFirst(3), encoding: .utf8)
+        } else if data.starts(with: [0xFF, 0xFE, 0x00, 0x00]) || data.starts(with: [0x00, 0x00, 0xFE, 0xFF]) {
+            // Checked before UTF-16, whose little-endian mark is the first half of this one.
+            hasBOM = true
+            used = .utf32
+            text = String(data: data, encoding: .utf32)
         } else if data.starts(with: [0xFF, 0xFE]) || data.starts(with: [0xFE, 0xFF]) {
             hasBOM = true
             used = .utf16

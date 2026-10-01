@@ -45,3 +45,12 @@ final class TextCodecTests: XCTestCase {
         XCTAssertNil(TextCodec.encode("日本語", encoding: .isoLatin1, hasBOM: false, lineEnding: .lf))
     }
 }
+
+extension TextCodecTests {
+    func testUTF32IsNotMistakenForUTF16() throws {
+        let original = try XCTUnwrap("añb\n".data(using: .utf32))
+        let decoded = try XCTUnwrap(TextCodec.decode(original))
+        XCTAssertEqual(decoded.encoding, .utf32)
+        XCTAssertEqual(decoded.text, "añb\n")
+    }
+}

@@ -48,8 +48,15 @@ public struct SearchQuery {
     ) -> [NSTextCheckingResult] {
         var results: [NSTextCheckingResult] = []
         let range = range ?? NSRange(location: 0, length: string.length)
-        regex.enumerateMatches(in: string as String, options: Self.matching, range: range) { result, _, stop in
-            if let result { results.append(result) }
+        // Progress reports arrive during a slow match too, so a search can be abandoned mid-match.
+        var options = Self.matching
+        options.insert(.reportProgress)
+        regex.enumerateMatches(in: string as String, options: options, range: range) { result, _, stop in
+            guard let result else {
+                if isCancelled() { stop.pointee = true }
+                return
+            }
+            results.append(result)
             if results.count % 2048 == 0 && isCancelled() { stop.pointee = true }
         }
         return results
@@ -83,6 +90,8 @@ public struct Replacement {
     private enum Piece {
         case literal(String)
         case group(Int)
+        /// The digits after a `$`. How many of them name a group depends on the pattern.
+        case digits(String)
         case named(String)
         case upper, lower, endCase, nextUpper, nextLower
     }
@@ -127,6 +136,16 @@ public struct Replacement {
             case .literal(let literal): append(literal)
             case .group(let number):
                 append(number < match.numberOfRanges ? text(of: match.range(at: number)) : "")
+            case .digits(let digits):
+                // The longest prefix that names a group; the rest is ordinary text, so "$10" with
+                // one group is group 1 followed by "0".
+                var used = digits.count
+                while used > 1, Int(digits.prefix(used))! >= match.numberOfRanges { used -= 1 }
+                let number = Int(digits.prefix(used))!
+                if number < match.numberOfRanges {
+                    append(text(of: match.range(at: number)))
+                    append(String(digits.dropFirst(used)))
+                }
             case .named(let name):
                 if let number = Int(name) {
                     append(number < match.numberOfRanges ? text(of: match.range(at: number)) : "")
@@ -184,9 +203,9 @@ public struct Replacement {
                     flush()
                     pieces.append(.named(String(chars[(i + 2)..<close])))
                     i = close + 1
-                } else if let (value, end) = digits(from: i + 1, max: 2) {
+                } else if let (_, end) = digits(from: i + 1, max: 2) {
                     flush()
-                    pieces.append(.group(value))
+                    pieces.append(.digits(String(chars[(i + 1)..<end])))
                     i = end
                 } else {
                     literal.append(c)

@@ -7,6 +7,7 @@ enum FindScope: Int {
 
 protocol FindBarDelegate: AnyObject {
     func findBarChanged()
+    func findBarScopeChanged()
     func findBarNext(backwards: Bool)
     func findBarReplace()
     func findBarReplaceAll()
@@ -80,7 +81,7 @@ final class FindBar: NSView, NSSearchFieldDelegate {
         scopePopup.controlSize = .small
         scopePopup.font = .systemFont(ofSize: NSFont.smallSystemFontSize)
         scopePopup.target = self
-        scopePopup.action = #selector(changed)
+        scopePopup.action = #selector(scopeChanged)
         scopePopup.toolTip = "Where to search and replace"
 
         let arrows = NSSegmentedControl(
@@ -196,6 +197,7 @@ final class FindBar: NSView, NSSearchFieldDelegate {
     // MARK: Actions
 
     @objc private func changed() { delegate?.findBarChanged() }
+    @objc private func scopeChanged() { delegate?.findBarScopeChanged() }
     @objc private func findAll() { delegate?.findBarFindAll() }
     @objc private func close() { delegate?.findBarClose() }
     @objc private func replace() { delegate?.findBarReplace() }

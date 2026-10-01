@@ -59,6 +59,8 @@ public struct SyntaxDefinition: Codable {
     public var caseInsensitive: Bool?
     /// For languages that need tab characters, such as Makefiles. Overrides the indentation setting.
     public var indentWithTabs: Bool?
+    /// For languages where a line ending in a colon opens a block, such as Python.
+    public var indentAfterColon: Bool?
     public var rules: [SyntaxRule]
 
     public var info: SyntaxInfo {
@@ -138,8 +140,13 @@ public final class CompiledSyntax {
         var tokens: [Token] = []
         var count = 0
         let range = range ?? NSRange(location: 0, length: string.length)
-        regex.enumerateMatches(in: string as String, options: [], range: range) { result, _, stop in
-            guard let result, result.range.length > 0 else { return }
+        // Progress reports arrive during a slow match too, so one bad rule can't run forever.
+        regex.enumerateMatches(in: string as String, options: [.reportProgress], range: range) { result, _, stop in
+            guard let result else {
+                if isCancelled() { stop.pointee = true }
+                return
+            }
+            guard result.range.length > 0 else { return }
             for (group, scope) in groups where result.range(at: group).location != NSNotFound {
                 tokens.append(Token(range: result.range, scope: scope))
                 break

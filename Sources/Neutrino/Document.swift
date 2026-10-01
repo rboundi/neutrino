@@ -15,6 +15,18 @@ final class Document: NSDocument, NSTextStorageDelegate {
     private(set) var syntax: CompiledSyntax?
     /// Set once the syntax is picked by hand, so saving under a new name doesn't change it.
     private var syntaxIsManual = false
+    /// Whether the last autosave failed, so the error is shown once and not on every attempt.
+    private var autosaveFailed = false
+
+    /// What a save writes, copied on the main thread so encoding and writing can happen off it.
+    private struct Snapshot {
+        var text: String
+        var encoding: String.Encoding
+        var hasBOM: Bool
+        var lineEnding: LineEnding
+    }
+    private var snapshot: Snapshot?
+    private let snapshotLock = NSLock()
 
     var editor: EditorWindowController? {
         windowControllers.first as? EditorWindowController
@@ -112,12 +124,36 @@ final class Document: NSDocument, NSTextStorageDelegate {
         if [.saveOperation, .saveAsOperation, .saveToOperation].contains(saveOperation) {
             editor?.tidyBeforeSaving()
         }
-        super.save(to: url, ofType: typeName, for: saveOperation, completionHandler: completionHandler)
+        setSnapshot(Snapshot(
+            text: textStorage.mutableString.copy() as! String, encoding: encoding, hasBOM: hasBOM,
+            lineEnding: lineEnding))
+        super.save(to: url, ofType: typeName, for: saveOperation) { [weak self] error in
+            self?.setSnapshot(nil)
+            completionHandler(error)
+        }
     }
 
+    private func setSnapshot(_ new: Snapshot?) {
+        snapshotLock.lock()
+        snapshot = new
+        snapshotLock.unlock()
+    }
+
+    /// Saves run in the background, so a large file doesn't freeze the window while it is written.
+    override func canAsynchronouslyWrite(
+        to url: URL, ofType typeName: String, for saveOperation: NSDocument.SaveOperationType
+    ) -> Bool { true }
+
     override func data(ofType typeName: String) throws -> Data {
+        snapshotLock.lock()
+        let saved = snapshot
+        snapshotLock.unlock()
+        // The text is already copied, so editing can carry on while it is encoded and written.
+        unblockUserInteraction()
+        guard let saved else { throw NSError(domain: NSCocoaErrorDomain, code: NSFileWriteUnknownError) }
+        let encoding = saved.encoding
         guard let data = TextCodec.encode(
-            textStorage.string, encoding: encoding, hasBOM: hasBOM, lineEnding: lineEnding)
+            saved.text, encoding: saved.encoding, hasBOM: saved.hasBOM, lineEnding: saved.lineEnding)
         else {
             throw NSError(domain: NSCocoaErrorDomain, code: NSFileWriteInapplicableStringEncodingError, userInfo: [
                 NSLocalizedDescriptionKey: "The text can't be saved as \(TextCodec.name(of: encoding)).",
@@ -133,7 +169,15 @@ final class Document: NSDocument, NSTextStorageDelegate {
     @objc func autosaveNow() {
         NSObject.cancelPreviousPerformRequests(withTarget: self, selector: #selector(autosaveNow), object: nil)
         guard hasUnautosavedChanges else { return }
-        autosave(withImplicitCancellability: true) { _ in }
+        autosave(withImplicitCancellability: true) { [weak self] error in
+            guard let self else { return }
+            guard let error = error as NSError? else { return self.autosaveFailed = false }
+            if error.domain == NSCocoaErrorDomain && error.code == NSUserCancelledError { return }
+            // Say so once, not after every pause in typing.
+            guard !self.autosaveFailed, let window = self.editor?.window else { return }
+            self.autosaveFailed = true
+            self.presentError(error, modalFor: window, delegate: nil, didPresent: nil, contextInfo: nil)
+        }
     }
 
     /// Autosaves once typing has stopped for a moment. Large files wait longer, since writing
@@ -168,6 +212,12 @@ final class Document: NSDocument, NSTextStorageDelegate {
     }
 
     // MARK: Changes on disk
+
+    override func revert(toContentsOf url: URL, ofType typeName: String) throws {
+        try super.revert(toContentsOf: url, ofType: typeName)
+        // The undo steps describe the old text; applying them to the new text would corrupt it.
+        undoManager?.removeAllActions()
+    }
 
     override func presentedItemDidChange() {
         super.presentedItemDidChange()
