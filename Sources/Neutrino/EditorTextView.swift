@@ -1172,8 +1172,82 @@ final class EditorTextView: NSTextView {
 }
 
 /// Draws spaces, tabs and line breaks when "Show invisible characters" is on.
-final class EditorLayoutManager: NSLayoutManager {
+final class EditorLayoutManager: NSLayoutManager, NSLayoutManagerDelegate {
     var showsInvisibles = false
+    /// The folded parts of the text. Their characters stay in the text; only their glyphs are
+    /// left out, and the first becomes an ellipsis.
+    var folds: [NSRange] = []
+
+    override init() {
+        super.init()
+        delegate = self
+    }
+
+    required init?(coder: NSCoder) { fatalError() }
+
+    /// A line break or tab inside a fold neither breaks the line nor takes room.
+    func layoutManager(
+        _ layoutManager: NSLayoutManager, shouldUse action: NSLayoutManager.ControlCharacterAction,
+        forControlCharacterAt characterIndex: Int
+    ) -> NSLayoutManager.ControlCharacterAction {
+        folds.contains { NSLocationInRange(characterIndex, $0) } ? .zeroAdvancement : action
+    }
+
+    /// Lays out the given parts of the text again, after a fold was made or opened there.
+    func refold(_ ranges: [NSRange]) {
+        let length = textStorage?.length ?? 0
+        for range in ranges {
+            let clamped = NSIntersectionRange(range, NSRange(location: 0, length: length))
+            guard clamped.length > 0 else { continue }
+            invalidateGlyphs(forCharacterRange: clamped, changeInLength: 0, actualCharacterRange: nil)
+            invalidateLayout(forCharacterRange: clamped, actualCharacterRange: nil)
+        }
+    }
+
+    func layoutManager(
+        _ layoutManager: NSLayoutManager, shouldGenerateGlyphs glyphs: UnsafePointer<CGGlyph>,
+        properties: UnsafePointer<NSLayoutManager.GlyphProperty>, characterIndexes: UnsafePointer<Int>,
+        font: NSFont, forGlyphRange glyphRange: NSRange
+    ) -> Int {
+        let count = glyphRange.length
+        // Nothing folded here: let the layout manager do what it always does.
+        guard count > 0, !folds.isEmpty else { return 0 }
+        let first = characterIndexes[0]
+        let last = characterIndexes[count - 1]
+        let near = folds.filter { $0.location <= last && NSMaxRange($0) > first }
+        guard !near.isEmpty else { return 0 }
+
+        // Each outermost fold shows "…" in place of its first character that isn't a line
+        // break (a line break would still break the line); everything else takes no room.
+        var marks = Set<Int>()
+        if let string = textStorage?.mutableString {
+            for fold in near where !folds.contains(where: { $0 != fold && $0.location <= fold.location && NSMaxRange($0) >= NSMaxRange(fold) }) {
+                var index = fold.location
+                while index < NSMaxRange(fold), index < string.length, string.character(at: index) == 0x0A { index += 1 }
+                if index < NSMaxRange(fold) { marks.insert(index) }
+            }
+        }
+        var newGlyphs = Array(UnsafeBufferPointer(start: glyphs, count: count))
+        var newProperties = Array(UnsafeBufferPointer(start: properties, count: count))
+        var ellipsis: CGGlyph = 0
+        var character: unichar = 0x2026
+        CTFontGetGlyphsForCharacters(font, &character, &ellipsis, 1)
+        for i in 0..<count {
+            let index = characterIndexes[i]
+            guard near.contains(where: { NSLocationInRange(index, $0) }) else { continue }
+            if marks.contains(index), ellipsis != 0 {
+                newGlyphs[i] = ellipsis
+                newProperties[i] = []
+            } else if newProperties[i].contains(.controlCharacter) {
+                // A line break stays a control character; the method below gives it no effect.
+                continue
+            } else {
+                newProperties[i] = .null
+            }
+        }
+        setGlyphs(newGlyphs, properties: newProperties, characterIndexes: characterIndexes, font: font, forGlyphRange: glyphRange)
+        return count
+    }
     var invisiblesFont = NSFont.monospacedSystemFont(ofSize: 13, weight: .regular)
 
     override func drawGlyphs(forGlyphRange glyphsToShow: NSRange, at origin: NSPoint) {
@@ -1212,6 +1286,21 @@ final class GutterView: NSView {
     var lineIndex: () -> LineIndex = { LineIndex() }
     /// The lines that have a bookmark, counted from 0.
     var bookmarks: () -> Set<Int> = { [] }
+    /// For the line starting at this character: 0 for no marker, 1 if it can be folded, 2 if it is.
+    var foldMark: (Int) -> Int = { _ in 0 }
+    /// Called with the first character of the line whose marker was clicked.
+    var onFoldClick: (Int) -> Void = { _ in }
+
+    /// A click beside a line folds it, or opens it again.
+    override func mouseDown(with event: NSEvent) {
+        guard let textView, let layoutManager = textView.layoutManager, let container = textView.textContainer,
+            let string = textView.textStorage?.mutableString, string.length > 0
+        else { return }
+        let y = convert(event.locationInWindow, from: nil).y + textView.visibleRect.minY - textView.textContainerOrigin.y
+        let glyph = layoutManager.glyphIndex(for: NSPoint(x: 0, y: y), in: container)
+        let character = layoutManager.characterIndexForGlyph(at: glyph)
+        onFoldClick(string.lineRange(for: NSRange(location: character, length: 0)).location)
+    }
     var font = NSFont.monospacedDigitSystemFont(ofSize: 11, weight: .regular) {
         didSet { digitWidth = nil }
     }
@@ -1244,6 +1333,27 @@ final class GutterView: NSView {
         let current: [NSAttributedString.Key: Any] = [.font: font, .foregroundColor: NSColor.labelColor]
 
         let marked = bookmarks()
+        func drawFoldMark(_ mark: Int, at rect: NSRect) {
+            guard mark > 0 else { return }
+            let middle = rect.midY + offset
+            let x = bounds.width - 6.5
+            let path = NSBezierPath()
+            if mark == 2 {
+                // Folded: a solid arrow pointing at the text.
+                path.move(to: NSPoint(x: x, y: middle - 3.5))
+                path.line(to: NSPoint(x: x + 4, y: middle))
+                path.line(to: NSPoint(x: x, y: middle + 3.5))
+                NSColor.labelColor.setFill()
+            } else {
+                path.move(to: NSPoint(x: x - 1, y: middle - 1.5))
+                path.line(to: NSPoint(x: x + 5, y: middle - 1.5))
+                path.line(to: NSPoint(x: x + 2, y: middle + 2.5))
+                Theme.gutterText.withAlphaComponent(0.6).setFill()
+            }
+            path.close()
+            path.fill()
+        }
+
         func drawNumber(_ line: Int, at rect: NSRect) {
             if marked.contains(line) {
                 NSColor.controlAccentColor.setFill()
@@ -1266,6 +1376,7 @@ final class GutterView: NSView {
             // Only the first fragment of a wrapped line gets a number.
             if character == 0 || string.character(at: character - 1) == 0x0A {
                 drawNumber(index.line(at: character), at: rect)
+                drawFoldMark(foldMark(character), at: rect)
             }
             glyph = NSMaxRange(fragment)
         }

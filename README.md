@@ -23,6 +23,8 @@
 - Matching bracket highlight, <kbd>⇧</kbd><kbd>⌘</kbd><kbd>M</kbd> to jump to it
 - Other occurrences of the selected word are marked
 - Word completion from the document (<kbd>⌥</kbd><kbd>Esc</kbd>)
+- Folding: collapse a block in JSON, HTML or any indented text from the gutter or with <kbd>⌥</kbd><kbd>⌘</kbd><kbd>←</kbd>
+- CSV and TSV files as a table (<kbd>⌥</kbd><kbd>⌘</kbd><kbd>T</kbd>): sort by a column, double-click a row to go to it in the text
 - Split editor: two views of the same document, with a divider you can drag (<kbd>⌘</kbd><kbd>\</kbd>)
 - Optional scrolling past the end, page guide, indent guides, marks on trailing spaces, hex colours underlined in their colour, spell checking
 - Read-only lock in the status bar; a file that can't be written opens locked
@@ -153,6 +155,8 @@ This installs the app to `/Applications` and links the `neutrino` command into `
 | Reveal in Finder / Copy Path | <kbd>⇧</kbd><kbd>⌘</kbd><kbd>R</kbd> / <kbd>⌃</kbd><kbd>⌘</kbd><kbd>C</kbd> |
 | Bold / italic in Markdown | <kbd>⌘</kbd><kbd>B</kbd> / <kbd>⌘</kbd><kbd>I</kbd> |
 | Split editor | <kbd>⌘</kbd><kbd>\</kbd> |
+| Fold / unfold | <kbd>⌥</kbd><kbd>⌘</kbd><kbd>←</kbd> / <kbd>⌥</kbd><kbd>⌘</kbd><kbd>→</kbd> |
+| Show as table | <kbd>⌥</kbd><kbd>⌘</kbd><kbd>T</kbd> |
 | Preview in MDReader | <kbd>⌥</kbd><kbd>⌘</kbd><kbd>P</kbd> |
 | Reopen closed tab | <kbd>⇧</kbd><kbd>⌘</kbd><kbd>T</kbd> |
 | Show tab 1–8 / last tab | <kbd>⌘</kbd><kbd>1</kbd>…<kbd>⌘</kbd><kbd>8</kbd> / <kbd>⌘</kbd><kbd>9</kbd> |
@@ -175,6 +179,7 @@ Sources/NeutrinoCore/           No UI, covered by tests
   UnifiedDiff.swift             Compare with Saved
   ThemeDefinition.swift         Theme files
   TextTools.swift               Indentation detection, word count, JSON, Base64 and URL transforms
+  Table.swift                   Reading CSV, and which lines a fold hides
 Sources/Neutrino/
   main.swift, AppDelegate.swift App entry, launch and quit
   MainMenu.swift                Menu bar
@@ -186,6 +191,7 @@ Sources/Neutrino/
   EditorTextView.swift          Text view: cursors, line commands, brackets, invisibles, line numbers
   FindBar.swift                 Find bar and the Find All list
   OpenQuickly.swift             Panel for jumping to a tab or a recent file
+  DelimitedTableView.swift      A CSV file shown as a table
   StatusBar.swift               Status bar and its menus
   PackageFolder.swift           Installing and removing downloaded files
   SyntaxStore.swift             Loading and unloading syntaxes

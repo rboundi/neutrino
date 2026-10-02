@@ -109,6 +109,12 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSText
     /// Where the text was edited lately, most recent last, for Go to Last Edit.
     private var editPlaces: [Int] = []
     private var editPlaceIndex: Int?
+    /// The folded parts of the text; see `EditorLayoutManager.folds`.
+    private var folds: [NSRange] = []
+    /// Folds an edit ran into, to be laid out again once the edit is done.
+    private var brokenFolds: [NSRange] = []
+    /// The table shown in place of the text, for a CSV file.
+    private var tableView: DelimitedTableView?
     /// Bookmarked lines, each kept as a place in the text so it moves with edits.
     private var bookmarks: [Int] = []
     private var caretLine = 0
@@ -287,6 +293,9 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSText
         pane.textView.isCode = { [weak self] index in self?.isCode(at: index) ?? true }
         pane.gutter.lineIndex = { [weak document] in document?.lineIndex ?? LineIndex() }
         pane.gutter.bookmarks = { [weak self] in self?.bookmarkedLines() ?? [] }
+        pane.gutter.foldMark = { [weak self] in self?.foldMark(forLineAt: $0) ?? 0 }
+        pane.gutter.onFoldClick = { [weak self] in self?.toggleFold(atLine: $0) }
+        pane.layoutManager.folds = folds
         let center = NotificationCenter.default
         center.addObserver(
             self, selector: #selector(viewportChanged(_:)), name: NSView.boundsDidChangeNotification,
@@ -417,7 +426,13 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSText
 
     func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
         switch menuItem.action {
-        case #selector(toggleSplit(_:)): menuItem.state = panes.count > 1 ? .on : .off
+        case #selector(toggleSplit(_:)):
+            menuItem.state = panes.count > 1 ? .on : .off
+            return tableView == nil
+        case #selector(toggleTable(_:)):
+            menuItem.state = tableView != nil ? .on : .off
+            return tableView != nil || isDelimitedFile
+        case #selector(unfoldAll(_:)): return !folds.isEmpty
         case #selector(toggleLock(_:)): menuItem.state = isLocked ? .on : .off
         case #selector(goToLastEdit(_:)): return !editPlaces.isEmpty
         case #selector(nextBookmark(_:)), #selector(previousBookmark(_:)), #selector(clearBookmarks(_:)):
@@ -724,6 +739,21 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSText
                 editPlaces[i] = newRange.location
             }
         }
+        // A fold after the edit moves with the text; one the edit ran into is opened.
+        var kept: [NSRange] = []
+        for var fold in folds {
+            if fold.location >= oldEnd {
+                fold.location += delta
+            } else if NSMaxRange(fold) > newRange.location {
+                brokenFolds.append(NSRange(location: fold.location, length: max(fold.length + delta, 0) + newRange.length))
+                continue
+            }
+            kept.append(fold)
+        }
+        if kept != folds || delta != 0 {
+            folds = kept
+            for pane in panes { pane.layoutManager.folds = kept }
+        }
         for i in bookmarks.indices {
             if bookmarks[i] >= oldEnd {
                 bookmarks[i] += delta
@@ -759,6 +789,11 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSText
         DispatchQueue.main.async { [weak self] in
             guard let self, let doc = self.doc else { return }
             self.editPending = false
+            if !self.brokenFolds.isEmpty {
+                for pane in self.panes { pane.layoutManager.refold(self.brokenFolds) }
+                self.brokenFolds = []
+            }
+            if self.tableView != nil { self.showTable() }
             self.invalidateDecoration()
             self.updateGutterWidth()
             for pane in self.panes { pane.gutter.needsDisplay = true }
@@ -789,6 +824,10 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSText
         changed.updateCurrentLine()
         changed.updateBracketMatch()
         panes.first { $0.textView === changed }?.gutter.needsDisplay = true
+        // A caret that lands inside a fold, from a search or Go to Line, opens it.
+        let caret = changed.selectedRange()
+        let entered = folds.filter { caret.location > $0.location && caret.location < NSMaxRange($0) }
+        if !entered.isEmpty { setFolds(folds.filter { !entered.contains($0) }, changed: entered) }
         guard changed === textView else { return }
         if style.markTrailingSpaces, let line = doc?.lineIndex.line(at: changed.selectedRange().location),
             line != caretLine {
@@ -858,6 +897,146 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSText
         textView.setSelectedRange(caret)
         textView.scrollRangeToVisible(caret)
         window?.makeFirstResponder(textView)
+    }
+
+    // MARK: Folding
+
+    private func setFolds(_ new: [NSRange], changed: [NSRange]) {
+        folds = new
+        for pane in panes {
+            pane.layoutManager.folds = new
+            pane.layoutManager.refold(changed)
+            pane.decorated.length = 0
+            pane.gutter.needsDisplay = true
+            pane.textView.needsDisplay = true
+        }
+        decorateVisible()
+    }
+
+    /// The fold that starts on the line beginning at `start`, if there is one.
+    private func fold(onLineAt start: Int) -> NSRange? {
+        let line = text.lineRange(for: NSRange(location: min(start, text.length), length: 0))
+        return folds.first { $0.location > line.location && $0.location <= NSMaxRange(line) }
+    }
+
+    private func foldMark(forLineAt start: Int) -> Int {
+        if fold(onLineAt: start) != nil { return 2 }
+        return Folding.isFoldable(in: text, lineStart: start, tabWidth: style.tabWidth) ? 1 : 0
+    }
+
+    /// Folds the block that starts on this line, or opens it if it is folded.
+    private func toggleFold(atLine start: Int) {
+        if let existing = fold(onLineAt: start) {
+            return setFolds(folds.filter { $0 != existing }, changed: [existing])
+        }
+        guard let range = Folding.range(
+            in: text, lineStart: start, tabWidth: style.tabWidth, isCode: { [weak self] in self?.isCode(at: $0) ?? true })
+        else { return NSSound.beep() }
+        // A caret inside would open the fold again at once, so it waits in front of it.
+        for pane in panes {
+            let caret = pane.textView.selectedRange()
+            if caret.location > range.location, caret.location < NSMaxRange(range) {
+                pane.textView.setSelectedRange(NSRange(location: range.location, length: 0))
+            }
+        }
+        setFolds(folds + [range], changed: [range])
+    }
+
+    /// Folds the block the caret is in: the one starting on its line, or else the nearest one
+    /// above that reaches down to it.
+    @objc func foldBlock(_ sender: Any?) {
+        let caret = textView.selectedRange().location
+        var line = text.lineRange(for: NSRange(location: caret, length: 0))
+        let own = line.location
+        var steps = 0
+        while steps < 5000 {
+            if fold(onLineAt: line.location) == nil,
+                let range = Folding.range(in: text, lineStart: line.location, tabWidth: style.tabWidth, isCode: { [weak self] in self?.isCode(at: $0) ?? true }),
+                line.location == own || NSMaxRange(range) >= caret {
+                return toggleFold(atLine: line.location)
+            }
+            guard line.location > 0 else { break }
+            line = text.lineRange(for: NSRange(location: line.location - 1, length: 0))
+            steps += 1
+        }
+        NSSound.beep()
+    }
+
+    /// Opens the fold on the caret's line.
+    @objc func unfoldBlock(_ sender: Any?) {
+        let caret = textView.selectedRange().location
+        guard let existing = fold(onLineAt: caret) else { return NSSound.beep() }
+        setFolds(folds.filter { $0 != existing }, changed: [existing])
+    }
+
+    @objc func unfoldAll(_ sender: Any?) {
+        setFolds([], changed: folds)
+    }
+
+    // MARK: Table
+
+    var isShowingTable: Bool { tableView != nil }
+
+    private var isDelimitedFile: Bool {
+        ["csv", "tsv", "tab", "psv"].contains(doc?.fileURL?.pathExtension.lowercased() ?? "")
+    }
+
+    /// Shows a CSV file as a table instead of text, or goes back to the text.
+    @objc func toggleTable(_ sender: Any?) {
+        if tableView != nil {
+            hideTable()
+        } else {
+            if panes.count > 1 { toggleSplit(nil) }
+            findBarClose()
+            showTable()
+        }
+    }
+
+    /// Reads the text as a table off the main thread and puts the table where the text was.
+    private func showTable() {
+        guard let doc else { return }
+        let source = doc.textStorage.string
+        workQueue.async {
+            let table = DelimitedTable(source, maxRows: 200_000)
+            DispatchQueue.main.async { [weak self] in
+                guard let self, self.doc != nil else { return }
+                let view = self.tableView ?? DelimitedTableView()
+                view.onOpen = { [weak self] offset in self?.hideTable(goingTo: offset) }
+                view.show(table)
+                if self.tableView == nil {
+                    self.tableView = view
+                    NSLayoutConstraint.deactivate(self.paneConstraints)
+                    self.editorArea.subviews.forEach { $0.removeFromSuperview() }
+                    view.translatesAutoresizingMaskIntoConstraints = false
+                    self.editorArea.addSubview(view)
+                    self.paneConstraints = [
+                        view.leadingAnchor.constraint(equalTo: self.editorArea.leadingAnchor),
+                        view.trailingAnchor.constraint(equalTo: self.editorArea.trailingAnchor),
+                        view.topAnchor.constraint(equalTo: self.editorArea.topAnchor),
+                        view.bottomAnchor.constraint(equalTo: self.editorArea.bottomAnchor),
+                    ]
+                    NSLayoutConstraint.activate(self.paneConstraints)
+                    self.window?.makeFirstResponder(view.table)
+                }
+                var label = "\(Self.count(max(table.rows.count - 1, 0), "row")), \(Self.count(table.columnCount, "column"))"
+                if !table.isComplete { label += ", the first 200,000 lines" }
+                self.statusBar.setPosition(label)
+            }
+        }
+    }
+
+    /// Back to the text, at the given place when a row was opened.
+    private func hideTable(goingTo offset: Int? = nil) {
+        guard tableView != nil else { return }
+        tableView = nil
+        layoutPanes()
+        window?.makeFirstResponder(textView)
+        if let offset {
+            let caret = NSRange(location: min(offset, text.length), length: 0)
+            textView.setSelectedRange(caret)
+            textView.scrollRangeToVisible(caret)
+        }
+        updatePosition()
     }
 
     // MARK: Bookmarks

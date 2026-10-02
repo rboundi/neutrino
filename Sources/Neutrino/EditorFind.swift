@@ -40,6 +40,8 @@ extension EditorWindowController: FindBarDelegate {
     // MARK: Menu commands
 
     @objc func showFind(_ sender: Any?) {
+        // Searching works on the text, so a table gives way to it.
+        if isShowingTable { toggleTable(nil) }
         findBar.syncOptions()
         let selection = textView.selectedRange()
         let selected = selection.length > 0 ? text.substring(with: selection) : ""

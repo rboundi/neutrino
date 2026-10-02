@@ -26,19 +26,30 @@ enum MainMenu {
         app.addItem(.separator())
         add(app, "Quit Neutrino", #selector(NSApplication.terminate(_:)), "q")
 
+        let up = String(UnicodeScalar(NSUpArrowFunctionKey)!)
+        let down = String(UnicodeScalar(NSDownArrowFunctionKey)!)
+        let left = String(UnicodeScalar(NSLeftArrowFunctionKey)!)
+        let right = String(UnicodeScalar(NSRightArrowFunctionKey)!)
+        let f2 = String(UnicodeScalar(NSF2FunctionKey)!)
+        func group(_ title: String, in menu: NSMenu) -> NSMenu {
+            let group = NSMenu()
+            menu.addItem(withTitle: title, action: nil, keyEquivalent: "").submenu = group
+            return group
+        }
+
         // File
         let file = submenu("File", in: main)
         add(file, "New", #selector(NSDocumentController.newDocument(_:)), "n")
         add(file, "New from Clipboard", #selector(DocumentController.newFromClipboard(_:)), "n", [.command, .shift])
         add(file, "Open…", #selector(NSDocumentController.openDocument(_:)), "o")
-        add(file, "Open Quickly…", #selector(AppDelegate.openQuickly(_:)), "o", [.command, .option], target: delegate)
-        add(file, "Open Path or Link at Caret", #selector(EditorWindowController.openPathAtCaret(_:)), "o", [.command, .control])
         // AppKit adds Open Recent after Open… by itself.
+        add(file, "Open Quickly…", #selector(AppDelegate.openQuickly(_:)), "o", [.command, .option], target: delegate)
         add(file, "Reopen Closed Tab", #selector(DocumentController.reopenClosedTab(_:)), "t", [.command, .shift])
         file.addItem(.separator())
         add(file, "Close", #selector(NSWindow.performClose(_:)), "w")
         add(file, "Close Other Tabs", #selector(AppDelegate.closeOtherTabs(_:)), "w", [.command, .option], target: delegate)
         add(file, "Close Tabs to the Right", #selector(AppDelegate.closeTabsToTheRight(_:)), target: delegate)
+        file.addItem(.separator())
         add(file, "Save", #selector(NSDocument.save(_:)), "s")
         add(file, "Save As…", #selector(NSDocument.saveAs(_:)), "s", [.command, .shift])
         add(file, "Save All", #selector(AppDelegate.saveAll(_:)), "s", [.command, .option], target: delegate)
@@ -47,17 +58,16 @@ enum MainMenu {
         add(file, "Move To…", #selector(NSDocument.move(_:)))
         add(file, "Revert to Saved", #selector(NSDocument.revertToSaved(_:)))
         add(file, "Read Only", #selector(EditorWindowController.toggleLock(_:)))
-        add(file, "Compare with Saved", #selector(Document.compareWithSaved(_:)))
-        let compare = NSMenu()
-        compare.identifier = compareMenu
-        compare.delegate = delegate
-        file.addItem(withTitle: "Compare with Tab", action: nil, keyEquivalent: "").submenu = compare
-        add(file, "Compare with Clipboard", #selector(Document.compareWithClipboard(_:)))
         file.addItem(.separator())
+        let compare = group("Compare", in: file)
+        add(compare, "With Saved", #selector(Document.compareWithSaved(_:)))
+        add(compare, "With Clipboard", #selector(Document.compareWithClipboard(_:)))
+        let tabs = group("With Tab", in: compare)
+        tabs.identifier = compareMenu
+        tabs.delegate = delegate
         add(file, "Reveal in Finder", #selector(Document.revealInFinder(_:)), "r", [.command, .shift])
         add(file, "Copy Path", #selector(Document.copyPath(_:)), "c", [.command, .control])
         add(file, "Open Terminal Here", #selector(Document.openTerminalHere(_:)))
-        file.addItem(.separator())
         add(file, "Preview in MDReader", #selector(Document.previewInMDReader(_:)), "p", [.command, .option])
         file.addItem(.separator())
         add(file, "Print…", #selector(NSDocument.printDocument(_:)), "p")
@@ -73,47 +83,36 @@ enum MainMenu {
         add(edit, "Paste and Match Indentation", #selector(EditorTextView.pasteAndIndent(_:)), "v", [.command, .option, .shift])
         add(edit, "Delete", #selector(NSText.delete(_:)))
         add(edit, "Select All", #selector(NSText.selectAll(_:)), "a")
-        add(edit, "Expand Selection", #selector(EditorTextView.expandSelection(_:)), String(UnicodeScalar(NSUpArrowFunctionKey)!), [.control, .shift])
-        add(edit, "Shrink Selection", #selector(EditorTextView.shrinkSelection(_:)), String(UnicodeScalar(NSDownArrowFunctionKey)!), [.control, .shift])
         edit.addItem(.separator())
-        let find = NSMenu()
-        edit.addItem(withTitle: "Find", action: nil, keyEquivalent: "").submenu = find
+
+        let find = group("Find", in: edit)
         add(find, "Find and Replace…", #selector(EditorWindowController.showFind(_:)), "f")
         add(find, "Find Next", #selector(EditorWindowController.findNext(_:)), "g")
         add(find, "Find Previous", #selector(EditorWindowController.findPrevious(_:)), "g", [.command, .shift])
         add(find, "Find All", #selector(EditorWindowController.findAll(_:)), "f", [.command, .control])
         add(find, "Use Selection for Find", #selector(EditorWindowController.useSelectionForFind(_:)), "e")
-        add(edit, "Go to Line…", #selector(EditorWindowController.goToLine(_:)), "l")
-        add(edit, "Go to Symbol…", #selector(EditorWindowController.showSymbols(_:)), "o", [.command, .shift])
-        add(edit, "Go to Last Edit", #selector(EditorWindowController.goToLastEdit(_:)), "-", [.control])
-        let marks = NSMenu()
-        edit.addItem(withTitle: "Bookmarks", action: nil, keyEquivalent: "").submenu = marks
-        add(marks, "Toggle Bookmark", #selector(EditorWindowController.toggleBookmark(_:)), String(UnicodeScalar(NSF2FunctionKey)!))
-        add(marks, "Next Bookmark", #selector(EditorWindowController.nextBookmark(_:)), String(UnicodeScalar(NSF2FunctionKey)!), [])
-        add(marks, "Previous Bookmark", #selector(EditorWindowController.previousBookmark(_:)), String(UnicodeScalar(NSF2FunctionKey)!), [.shift])
-        add(marks, "Clear Bookmarks", #selector(EditorWindowController.clearBookmarks(_:)))
-        add(edit, "Go to Matching Bracket", #selector(EditorTextView.goToMatchingBracket(_:)), "m", [.command, .shift])
-        edit.addItem(.separator())
 
-        let cursors = NSMenu()
-        edit.addItem(withTitle: "Cursors", action: nil, keyEquivalent: "").submenu = cursors
-        add(cursors, "Select Next Occurrence", #selector(EditorTextView.selectNextOccurrence(_:)), "d")
-        add(cursors, "Select All Occurrences", #selector(EditorTextView.selectAllOccurrences(_:)), "g", [.command, .control])
-        add(cursors, "Add Cursor Above", #selector(EditorTextView.addCursorAbove(_:)), String(UnicodeScalar(NSUpArrowFunctionKey)!), [.command, .option])
-        add(cursors, "Add Cursor Below", #selector(EditorTextView.addCursorBelow(_:)), String(UnicodeScalar(NSDownArrowFunctionKey)!), [.command, .option])
-        add(cursors, "Insert Numbers", #selector(EditorTextView.insertNumbers(_:)))
-        add(cursors, "Increase Number", #selector(EditorTextView.increaseNumber(_:)), String(UnicodeScalar(NSUpArrowFunctionKey)!), [.control, .option])
-        add(cursors, "Decrease Number", #selector(EditorTextView.decreaseNumber(_:)), String(UnicodeScalar(NSDownArrowFunctionKey)!), [.control, .option])
-        add(cursors, "Split Selection into Lines", #selector(EditorTextView.splitSelectionIntoLines(_:)), "l", [.command, .shift])
+        let selection = group("Selection", in: edit)
+        add(selection, "Expand", #selector(EditorTextView.expandSelection(_:)), up, [.control, .shift])
+        add(selection, "Shrink", #selector(EditorTextView.shrinkSelection(_:)), down, [.control, .shift])
+        selection.addItem(.separator())
+        add(selection, "Select Next Occurrence", #selector(EditorTextView.selectNextOccurrence(_:)), "d")
+        add(selection, "Select All Occurrences", #selector(EditorTextView.selectAllOccurrences(_:)), "g", [.command, .control])
+        add(selection, "Add Cursor Above", #selector(EditorTextView.addCursorAbove(_:)), up, [.command, .option])
+        add(selection, "Add Cursor Below", #selector(EditorTextView.addCursorBelow(_:)), down, [.command, .option])
+        add(selection, "Split into Lines", #selector(EditorTextView.splitSelectionIntoLines(_:)), "l", [.command, .shift])
+        selection.addItem(.separator())
+        add(selection, "Insert Numbers at Cursors", #selector(EditorTextView.insertNumbers(_:)))
+        add(selection, "Increase Number", #selector(EditorTextView.increaseNumber(_:)), up, [.control, .option])
+        add(selection, "Decrease Number", #selector(EditorTextView.decreaseNumber(_:)), down, [.control, .option])
 
-        let lines = NSMenu()
-        edit.addItem(withTitle: "Lines", action: nil, keyEquivalent: "").submenu = lines
+        let lines = group("Lines", in: edit)
         add(lines, "Shift Right", #selector(EditorTextView.shiftRight(_:)), "]")
         add(lines, "Shift Left", #selector(EditorTextView.shiftLeft(_:)), "[")
         add(lines, "Comment or Uncomment", #selector(EditorTextView.toggleComment(_:)), "/")
         lines.addItem(.separator())
-        add(lines, "Move Up", #selector(EditorTextView.moveLinesUp(_:)), String(UnicodeScalar(NSUpArrowFunctionKey)!), [.command, .control])
-        add(lines, "Move Down", #selector(EditorTextView.moveLinesDown(_:)), String(UnicodeScalar(NSDownArrowFunctionKey)!), [.command, .control])
+        add(lines, "Move Up", #selector(EditorTextView.moveLinesUp(_:)), up, [.command, .control])
+        add(lines, "Move Down", #selector(EditorTextView.moveLinesDown(_:)), down, [.command, .control])
         add(lines, "Duplicate", #selector(EditorTextView.duplicateLines(_:)), "d", [.command, .shift])
         add(lines, "Delete", #selector(EditorTextView.deleteLines(_:)), "k", [.command, .shift])
         add(lines, "Join", #selector(EditorTextView.joinLines(_:)), "j", [.command])
@@ -127,46 +126,41 @@ enum MainMenu {
         lines.addItem(.separator())
         add(lines, "Align…", #selector(EditorWindowController.alignLines(_:)))
         add(lines, "Rewrap Paragraph", #selector(EditorTextView.rewrapParagraph(_:)), "q", [.control])
+        add(lines, "Indentation to Spaces", #selector(EditorTextView.indentationToSpaces(_:)))
+        add(lines, "Indentation to Tabs", #selector(EditorTextView.indentationToTabs(_:)))
 
-        let letters = NSMenu()
-        edit.addItem(withTitle: "Convert Case", action: nil, keyEquivalent: "").submenu = letters
-        add(letters, "Upper Case", #selector(NSResponder.uppercaseWord(_:)))
-        add(letters, "Lower Case", #selector(NSResponder.lowercaseWord(_:)))
-        add(letters, "Capitalize", #selector(NSResponder.capitalizeWord(_:)))
-
-        let transform = NSMenu()
-        edit.addItem(withTitle: "Transform", action: nil, keyEquivalent: "").submenu = transform
+        let transform = group("Transform", in: edit)
+        add(transform, "Upper Case", #selector(NSResponder.uppercaseWord(_:)))
+        add(transform, "Lower Case", #selector(NSResponder.lowercaseWord(_:)))
+        add(transform, "Capitalize", #selector(NSResponder.capitalizeWord(_:)))
+        transform.addItem(.separator())
         add(transform, "Pretty-Print JSON", #selector(EditorTextView.prettyPrintJSON(_:)))
         add(transform, "Minify JSON", #selector(EditorTextView.minifyJSON(_:)))
+        add(transform, "Escape JSON String", #selector(EditorTextView.jsonEscape(_:)))
+        add(transform, "Unescape JSON String", #selector(EditorTextView.jsonUnescape(_:)))
         transform.addItem(.separator())
         add(transform, "Base64 Encode", #selector(EditorTextView.base64Encode(_:)))
         add(transform, "Base64 Decode", #selector(EditorTextView.base64Decode(_:)))
         add(transform, "URL Encode", #selector(EditorTextView.urlEncode(_:)))
         add(transform, "URL Decode", #selector(EditorTextView.urlDecode(_:)))
-        add(transform, "Escape JSON String", #selector(EditorTextView.jsonEscape(_:)))
-        add(transform, "Unescape JSON String", #selector(EditorTextView.jsonUnescape(_:)))
         add(transform, "Encode HTML Entities", #selector(EditorTextView.htmlEncode(_:)))
         add(transform, "Decode HTML Entities", #selector(EditorTextView.htmlDecode(_:)))
+        transform.addItem(.separator())
         add(transform, "Zap Gremlins", #selector(EditorTextView.zapGremlins(_:)))
         add(transform, "Straighten Quotes", #selector(EditorTextView.straightenQuotes(_:)))
         transform.addItem(.separator())
         add(transform, "Copy SHA-256", #selector(EditorWindowController.copySHA256(_:)))
-        transform.addItem(.separator())
-        add(transform, "Indentation to Spaces", #selector(EditorTextView.indentationToSpaces(_:)))
-        add(transform, "Indentation to Tabs", #selector(EditorTextView.indentationToTabs(_:)))
+        add(transform, "Filter Through Command…", #selector(EditorWindowController.filterThroughCommand(_:)), "r", [.command, .option])
 
-        let markdown = NSMenu()
-        edit.addItem(withTitle: "Markdown", action: nil, keyEquivalent: "").submenu = markdown
-        add(markdown, "Bold", #selector(EditorTextView.markdownBold(_:)), "b")
-        add(markdown, "Italic", #selector(EditorTextView.markdownItalic(_:)), "i")
-
-        let insert = NSMenu()
-        edit.addItem(withTitle: "Insert", action: nil, keyEquivalent: "").submenu = insert
+        let insert = group("Insert", in: edit)
         add(insert, "Date", #selector(EditorTextView.insertDate(_:)))
         add(insert, "Date and Time", #selector(EditorTextView.insertDateAndTime(_:)))
         add(insert, "UUID", #selector(EditorTextView.insertUUID(_:)))
 
-        add(edit, "Filter Through Command…", #selector(EditorWindowController.filterThroughCommand(_:)), "r", [.command, .option])
+        let markdown = group("Markdown", in: edit)
+        add(markdown, "Bold", #selector(EditorTextView.markdownBold(_:)), "b")
+        add(markdown, "Italic", #selector(EditorTextView.markdownItalic(_:)), "i")
+
         edit.addItem(.separator())
         add(edit, "Complete Word", #selector(NSTextView.complete(_:)), "\u{1B}", [.option])
         add(edit, "Check Spelling While Typing", #selector(AppDelegate.toggleSetting(_:)), target: delegate)
@@ -181,13 +175,32 @@ enum MainMenu {
             let item = add(view, title, #selector(AppDelegate.toggleSetting(_:)), target: delegate)
             item.representedObject = key
         }
+        view.addItem(.separator())
         add(view, "Split Editor", #selector(EditorWindowController.toggleSplit(_:)), "\\")
+        add(view, "Show as Table", #selector(EditorWindowController.toggleTable(_:)), "t", [.command, .option])
+        view.addItem(.separator())
+        add(view, "Fold", #selector(EditorWindowController.foldBlock(_:)), left, [.command, .option])
+        add(view, "Unfold", #selector(EditorWindowController.unfoldBlock(_:)), right, [.command, .option])
+        add(view, "Unfold All", #selector(EditorWindowController.unfoldAll(_:)))
         view.addItem(.separator())
         add(view, "Bigger", #selector(AppDelegate.changeFontSize(_:)), "+", target: delegate).tag = 1
         add(view, "Smaller", #selector(AppDelegate.changeFontSize(_:)), "-", target: delegate).tag = -1
         add(view, "Default Size", #selector(AppDelegate.changeFontSize(_:)), "0", target: delegate).tag = 0
         view.addItem(.separator())
         add(view, "Enter Full Screen", #selector(NSWindow.toggleFullScreen(_:)), "f", [.command, .control, .shift])
+
+        // Go
+        let go = submenu("Go", in: main)
+        add(go, "Go to Line…", #selector(EditorWindowController.goToLine(_:)), "l")
+        add(go, "Go to Symbol…", #selector(EditorWindowController.showSymbols(_:)), "o", [.command, .shift])
+        add(go, "Go to Matching Bracket", #selector(EditorTextView.goToMatchingBracket(_:)), "m", [.command, .shift])
+        add(go, "Go to Last Edit", #selector(EditorWindowController.goToLastEdit(_:)), "-", [.control])
+        add(go, "Open Path or Link at Caret", #selector(EditorWindowController.openPathAtCaret(_:)), "o", [.command, .control])
+        go.addItem(.separator())
+        add(go, "Toggle Bookmark", #selector(EditorWindowController.toggleBookmark(_:)), f2)
+        add(go, "Next Bookmark", #selector(EditorWindowController.nextBookmark(_:)), f2, [])
+        add(go, "Previous Bookmark", #selector(EditorWindowController.previousBookmark(_:)), f2, [.shift])
+        add(go, "Clear Bookmarks", #selector(EditorWindowController.clearBookmarks(_:)))
 
         // Window
         let window = submenu("Window", in: main)
