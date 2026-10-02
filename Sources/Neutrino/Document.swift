@@ -223,6 +223,10 @@ final class Document: NSDocument, NSTextStorageDelegate {
         super.save(to: url, ofType: typeName, for: saveOperation) { [weak self] error in
             self?.setSnapshot(nil)
             if error == nil, byHand { self?.setBaseline(saved) }
+            // The file now holds this text, whatever the notice was about.
+            if error == nil, saveOperation != .autosaveElsewhereOperation, saveOperation != .saveToOperation {
+                self?.editor?.hideConflict()
+            }
             completionHandler(error)
         }
     }
@@ -264,7 +268,8 @@ final class Document: NSDocument, NSTextStorageDelegate {
     /// loses focus, so other tools see the current text.
     @objc func autosaveNow() {
         NSObject.cancelPreviousPerformRequests(withTarget: self, selector: #selector(autosaveNow), object: nil)
-        guard hasUnautosavedChanges else { return }
+        // Not over a file that another app has changed: that waits for the answer to the notice.
+        guard hasUnautosavedChanges, editor?.hasConflict != true else { return }
         autosave(withImplicitCancellability: true) { [weak self] error in
             guard let self else { return }
             guard let error = error as NSError? else { return self.autosaveFailed = false }
@@ -341,7 +346,8 @@ final class Document: NSDocument, NSTextStorageDelegate {
 
     /// Reads the file again and drops the unsaved changes; from the conflict notice.
     func reloadFromDisk() {
-        guard let url = fileURL, let type = fileType else { return }
+        // Not while a save is under way: it would finish after the reload and call the file saved.
+        guard let url = fileURL, let type = fileType, !isSaving else { return NSSound.beep() }
         do {
             try revert(toContentsOf: url, ofType: type)
         } catch {
@@ -353,6 +359,14 @@ final class Document: NSDocument, NSTextStorageDelegate {
     /// without asking.
     func keepOverDisk() {
         if let date = newerDateOnDisk { fileModificationDate = date }
+        scheduleAutosave()
+    }
+
+    /// Whether this document is writing its file right now.
+    private var isSaving: Bool {
+        snapshotLock.lock()
+        defer { snapshotLock.unlock() }
+        return snapshot != nil
     }
 
     /// Picks up edits made by another app, as long as there is nothing unsaved here to lose.
@@ -360,7 +374,8 @@ final class Document: NSDocument, NSTextStorageDelegate {
     private func reloadIfChangedOnDisk() {
         guard let url = fileURL, let type = fileType, newerDateOnDisk != nil else { return }
         guard !isDocumentEdited else {
-            editor?.showConflict()
+            // Not while this document is itself writing the file.
+            if !isSaving { editor?.showConflict() }
             return
         }
         // With the caret on the last line, stay at the end as the file grows, like `tail -f`.
@@ -461,20 +476,27 @@ final class Document: NSDocument, NSTextStorageDelegate {
             process.currentDirectoryURL = url.deletingLastPathComponent()
             process.arguments = ["show", "HEAD:./\(name)"]
             let output = Pipe()
+            let errors = Pipe()
             process.standardOutput = output
-            process.standardError = FileHandle.nullDevice
+            process.standardError = errors
             var committed: String?
+            // What Git says when it can't: a file that was never committed, no commits yet,
+            // a folder it doesn't trust.
+            var reason = "Git couldn't be started."
             if (try? process.run()) != nil {
+                // Git writes either the file or a short message, so reading one then the other can't block.
                 let data = output.fileHandleForReading.readDataToEndOfFile()
+                let message = errors.fileHandleForReading.readDataToEndOfFile()
                 process.waitUntilExit()
                 if process.terminationStatus == 0 { committed = TextCodec.decode(data, as: encoding)?.text ?? TextCodec.decode(data)?.text }
+                reason = String(decoding: message.prefix(600), as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)
             }
             let diff = committed.flatMap { UnifiedDiff.make(old: $0, new: current, oldName: "\(name) (HEAD)", newName: "\(name) (now)") }
             DispatchQueue.main.async {
                 guard committed != nil else {
                     let alert = NSAlert()
-                    alert.messageText = "“\(name)” isn't in the last commit"
-                    alert.informativeText = "It has not been committed to this Git repository yet."
+                    alert.messageText = "Git has no committed “\(name)” to compare with"
+                    alert.informativeText = reason
                     alert.runModal()
                     return
                 }

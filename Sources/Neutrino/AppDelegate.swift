@@ -193,10 +193,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
     /// The last things copied or cut here, newest first, each shown by its first line.
     private func fillHistoryMenu(_ menu: NSMenu) {
         for entry in ClipboardHistory.entries {
-            let line = entry.trimmingCharacters(in: .whitespacesAndNewlines).prefix(while: { $0 != "\n" })
-            let title = line.count > 60 ? line.prefix(60) + "…" : String(line)
-            let item = menu.addItem(withTitle: title.isEmpty ? "(blank)" : title, action: #selector(EditorTextView.pasteFromHistory(_:)), keyEquivalent: "")
-            item.representedObject = entry
+            let item = menu.addItem(withTitle: entry.title, action: #selector(EditorTextView.pasteFromHistory(_:)), keyEquivalent: "")
+            item.representedObject = entry.text
         }
         if menu.items.isEmpty {
             menu.addItem(withTitle: "Nothing Copied Yet", action: nil, keyEquivalent: "").isEnabled = false

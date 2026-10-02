@@ -92,12 +92,12 @@ public enum Snippets {
         return snippets
     }
 
-    private static let stop = try! NSRegularExpression(pattern: "\\$(?:([0-9])|\\{([0-9]):([^}]*)\\})")
+    private static let stop = try! NSRegularExpression(pattern: "\\\\\\$|\\$(?:([0-9])|\\{([0-9]):([^}]*)\\})")
 
     /// The snippet as it goes into the text: lines after the first get `indent` in front and
     /// each leading tab becomes `unit`. `$1`, `$2`… and `$0` are taken out and `${1:name}`
     /// leaves `name`; `stops` says where they were, in UTF-16 units, in the order Tab visits
-    /// them: 1 to 9, then 0.
+    /// them: 1 to 9, then 0. `\$` is a dollar sign that stays.
     public static func expand(_ body: String, indent: String, unit: String) -> (text: String, stops: [NSRange]) {
         let lines = body.components(separatedBy: "\n").enumerated().map { index, line -> String in
             let tabs = line.prefix { $0 == "\t" }.count
@@ -111,6 +111,10 @@ public enum Snippets {
         for match in stop.matches(in: source as String, range: NSRange(location: 0, length: source.length)) {
             output.append(source.substring(with: NSRange(location: cursor, length: match.range.location - cursor)))
             cursor = NSMaxRange(match.range)
+            if match.range.length == 2, source.character(at: match.range.location) == 0x5C {
+                output.append("$")
+                continue
+            }
             let simple = match.range(at: 1).location != NSNotFound
             let number = Int(source.substring(with: match.range(at: simple ? 1 : 2))) ?? 0
             let filler = simple ? "" : source.substring(with: match.range(at: 3))
@@ -153,16 +157,19 @@ public enum NameStyle {
     /// The name in the next style: camelCase, snake_case, kebab-case, CONSTANT_CASE, and round
     /// again. Nil for a name of one word, which looks the same in all of them but the last.
     public static func next(_ name: String) -> String? {
+        // Underscores in front, as in `_privateName`, are not part of the style and stay.
+        let lead = String(name.prefix { $0 == "_" })
+        let name = String(name.dropFirst(lead.count))
         let words = words(of: name)
         guard words.count > 1 else { return nil }
-        if name.contains("-") { return words.joined(separator: "_").uppercased() }
+        if name.contains("-") { return lead + words.joined(separator: "_").uppercased() }
         if name.contains("_") {
             if name == name.uppercased() {
-                return words[0] + words.dropFirst().map(\.capitalized).joined()
+                return lead + words[0] + words.dropFirst().map(\.capitalized).joined()
             }
-            return words.joined(separator: "-")
+            return lead + words.joined(separator: "-")
         }
-        return words.joined(separator: "_")
+        return lead + words.joined(separator: "_")
     }
 }
 
@@ -307,7 +314,8 @@ public enum Convert {
     /// in seconds. Nil for anything else.
     public static func timestamp(_ text: String) -> String? {
         let text = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        if text.range(of: "^[0-9]{1,13}$", options: .regularExpression) != nil, let number = Double(text) {
+// Nine digits and up: a shorter number is more likely a count than a time since 1970.
+        if text.range(of: "^[0-9]{9,13}$", options: .regularExpression) != nil, let number = Double(text) {
             // From 12 digits on it can only be milliseconds: in seconds that is the year 5138.
             let seconds = text.count >= 12 ? number / 1000 : number
             return formatter([.withInternetDateTime]).string(from: Date(timeIntervalSince1970: seconds))

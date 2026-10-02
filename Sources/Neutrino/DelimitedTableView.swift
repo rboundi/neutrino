@@ -4,7 +4,7 @@ import NeutrinoCore
 /// A CSV file shown as a table. It is for reading: the first line gives the column titles,
 /// a click on a title sorts by that column, the field above keeps only the rows that contain
 /// what is typed, and a double click on a row goes to it in the text.
-final class DelimitedTableView: NSView, NSTableViewDataSource, NSTableViewDelegate, NSSearchFieldDelegate, NSMenuItemValidation {
+final class DelimitedTableView: NSView, NSTableViewDataSource, NSTableViewDelegate, NSSearchFieldDelegate, NSMenuItemValidation, NSMenuDelegate {
     /// Called with the place in the text of the row that was double-clicked.
     var onOpen: (Int) -> Void = { _ in }
     /// Called with how many rows are shown and how many there are, when either changes.
@@ -49,6 +49,7 @@ final class DelimitedTableView: NSView, NSTableViewDataSource, NSTableViewDelega
         }
         menu.addItem(.separator())
         menu.addItem(withTitle: "Totals for This Column", action: #selector(columnTotals(_:)), keyEquivalent: "").target = self
+        menu.delegate = self
         table.menu = menu
         table.headerView?.menu = menu
 
@@ -140,7 +141,7 @@ final class DelimitedTableView: NSView, NSTableViewDataSource, NSTableViewDelega
             // Read once per row rather than at every comparison.
             let keys: [(text: String, number: Double?)] = rows.map { row in
                 let text = index < row.count ? row[index] : ""
-                return (text, Double(text))
+                return (text, Self.number(text))
             }
             shown.sort { a, b in
                 let ascending: Bool
@@ -230,11 +231,28 @@ final class DelimitedTableView: NSView, NSTableViewDataSource, NSTableViewDelega
         put(DelimitedTable.json(titles: titles, rows: chosenRows))
     }
 
+    /// The column under the pointer when the menu was opened, over a row or over a title.
+    private var menuColumn = -1
+
+    func menuNeedsUpdate(_ menu: NSMenu) {
+        guard let event = NSApp.currentEvent, event.window === window else { return }
+        // Only across counts: over a title the pointer is above the table's rows.
+        let x = table.convert(event.locationInWindow, from: nil).x
+        menuColumn = table.column(at: NSPoint(x: x, y: table.visibleRect.minY + 1))
+    }
+
+    /// A number as written in a table: not "nan", "infinity" or a hex float, which `Double` also reads.
+    private static func number(_ text: String) -> Double? {
+        let text = text.trimmingCharacters(in: .whitespaces)
+        guard let value = Double(text), value.isFinite, !text.contains(where: { $0 == "x" || $0 == "X" }) else { return nil }
+        return value
+    }
+
     /// Adds up the numbers in the column that was clicked: of the selected rows when several
     /// are selected, otherwise of every row shown.
     @objc func columnTotals(_ sender: Any?) {
-        guard table.tableColumns.indices.contains(table.clickedColumn),
-            let index = Int(table.tableColumns[table.clickedColumn].identifier.rawValue)
+        guard table.tableColumns.indices.contains(menuColumn),
+            let index = Int(table.tableColumns[menuColumn].identifier.rawValue)
         else { return NSSound.beep() }
         let chosen = table.selectedRowIndexes.count > 1 ? Array(table.selectedRowIndexes) : Array(order.indices)
         var count = 0
@@ -243,7 +261,7 @@ final class DelimitedTableView: NSView, NSTableViewDataSource, NSTableViewDelega
         var most = -Double.infinity
         for row in chosen where order.indices.contains(row) {
             let fields = rows[order[row]]
-            guard index < fields.count, let value = Double(fields[index].trimmingCharacters(in: .whitespaces)) else { continue }
+            guard index < fields.count, let value = Self.number(fields[index]) else { continue }
             count += 1
             sum += value
             least = min(least, value)
@@ -257,7 +275,7 @@ final class DelimitedTableView: NSView, NSTableViewDataSource, NSTableViewDelega
     }
 
     func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
-        if menuItem.action == #selector(columnTotals(_:)) { return table.clickedColumn >= 0 && !order.isEmpty }
+        if menuItem.action == #selector(columnTotals(_:)) { return menuColumn >= 0 && !order.isEmpty }
         return !order.isEmpty
     }
 

@@ -13,6 +13,7 @@ final class HexView: NSView {
         get { rows.data }
         set {
             rows.data = newValue.prefix(Self.limit)
+            rows.marked = nil
             rows.resize()
             rows.scroll(.zero)
         }

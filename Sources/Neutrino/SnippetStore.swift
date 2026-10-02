@@ -4,7 +4,7 @@ import NeutrinoCore
 /// The last things copied or cut in Neutrino, newest first, for Paste from History. They are
 /// kept in memory only.
 enum ClipboardHistory {
-    private(set) static var entries: [String] = []
+    private(set) static var entries: [(title: String, text: String)] = []
     private static let limit = 10
     /// A longer copy isn't kept: ten of them would hold a lot of memory.
     private static let longest = 1_000_000
@@ -14,8 +14,12 @@ enum ClipboardHistory {
         guard let copied = NSPasteboard.general.string(forType: .string), !copied.isEmpty,
             copied.utf16.count <= longest
         else { return }
-        entries.removeAll { $0 == copied }
-        entries.insert(copied, at: 0)
+        entries.removeAll { $0.text == copied }
+        // The menu's title is made here, once, from the start of the text: its first line.
+        let start = copied.prefix(400).trimmingCharacters(in: .whitespacesAndNewlines)
+        let line = start.prefix { $0 != "\n" }
+        let title = line.isEmpty ? "(blank)" : line.count > 60 ? line.prefix(60) + "…" : String(line)
+        entries.insert((title, copied), at: 0)
         if entries.count > limit { entries.removeLast() }
     }
 }
@@ -51,6 +55,7 @@ final class SnippetStore {
 
         $1, $2 and so on are places the caret goes to, in that order, each time you press Tab;
         $0 is the last. ${1:name} is a place with text already in it, selected when you get there.
+        Write \\$ for a dollar sign that should stay, as in \\$1.
 
         === todo
         TODO: $0

@@ -345,7 +345,7 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSText
     /// Folds what was folded when the file was last closed.
     private func restoreFolds() {
         guard folds.isEmpty, let url = doc?.fileURL else { return }
-let saved = Prefs.folds(for: url, textLength: text.length).filter { Folding.fits($0, in: text) }
+        let saved = Prefs.folds(for: url, textLength: text.length).filter { Folding.fits($0, in: text) }
             .sorted { $0.location < $1.location }
         if !saved.isEmpty { setFolds(saved, changed: saved) }
     }
@@ -911,6 +911,9 @@ let saved = Prefs.folds(for: url, textLength: text.length).filter { Folding.fits
         noticeBar.isHidden = true
     }
 
+    /// Whether the notice about a change on disk is waiting for an answer.
+    var hasConflict: Bool { !noticeBar.isHidden }
+
     private func setChanges(_ new: ChangedLines) {
         guard new != changes else { return }
         changes = new
@@ -1298,7 +1301,7 @@ let saved = Prefs.folds(for: url, textLength: text.length).filter { Folding.fits
         guard let button = window?.standardWindowButton(.documentVersionsButton) else { return }
         let hide = doc?.fileURL == nil
         button.isHidden = hide
-// The dash between the title and "Edited" is a label of its own beside the button: the
+        // The dash between the title and "Edited" is a label of its own beside the button: the
         // one label there that isn't the title. It comes back only while the button has
         // something to say.
         for case let label as NSTextField in button.superview?.subviews ?? [] where label.stringValue != window?.title {

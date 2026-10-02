@@ -29,7 +29,7 @@ swift test
 ## Releasing
 
 ```bash
-scripts/release.sh 1.5.0
+scripts/release.sh 1.6.0
 ```
 
 The script checks that `main` is pushed and CI passed, builds a universal app, signs it with the Developer ID certificate, notarizes and staples the app and the .dmg, tags the commit, publishes the GitHub release and updates the Homebrew cask.

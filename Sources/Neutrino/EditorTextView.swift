@@ -195,13 +195,26 @@ final class EditorTextView: NSTextView {
     func textEdited(newRange: NSRange, delta: Int) {
         guard !snippetStops.isEmpty else { return }
         let oldEnd = newRange.location + newRange.length - delta
-        for i in snippetStops.indices {
-            if snippetStops[i].location >= oldEnd {
-                snippetStops[i].location += delta
-            } else if NSMaxRange(snippetStops[i]) > newRange.location {
-                // The edit ran into it: what is left is a bare place.
-                snippetStops[i] = NSRange(location: min(snippetStops[i].location, newRange.location), length: 0)
+        // An edit that reaches outside the snippet, such as a reload or undoing the expansion,
+        // leaves nothing to visit.
+        let reachesOutside = newRange.location < snippetStart || oldEnd > snippetEnd
+        let replacesAll = newRange.location <= snippetStart && oldEnd >= snippetEnd
+        if oldEnd > snippetStart, newRange.location < snippetEnd, reachesOutside || replacesAll {
+            snippetStops = []
+            return
+        }
+        snippetStops = snippetStops.compactMap { stop in
+            var stop = stop
+            if stop.location >= oldEnd {
+                stop.location += delta
+            } else if stop.location > newRange.location {
+                // It was inside what the edit replaced.
+                return nil
+            } else if NSMaxRange(stop) > newRange.location {
+                // The edit ran into its text: what is in front of the edit is left.
+                stop.length = newRange.location - stop.location
             }
+            return stop
         }
         if snippetStart >= oldEnd { snippetStart += delta }
         if snippetEnd >= oldEnd { snippetEnd += delta }
@@ -209,7 +222,7 @@ final class EditorTextView: NSTextView {
 
     /// Tab goes back to its usual work once the caret has left the snippet.
     func leaveSnippetIfOutside() {
-guard !snippetStops.isEmpty else { return }
+        guard !snippetStops.isEmpty else { return }
         let caret = selectedRange().location
         if caret < snippetStart || caret > snippetEnd || !cursors.isEmpty { snippetStops = [] }
     }

@@ -84,6 +84,9 @@ final class EditingToolsTests: XCTestCase {
         XCTAssertEqual(Snippets.expand("abc", indent: "", unit: "\t").stops, [])
         let stops = Snippets.expand("f($2, ${1:name}) { $0 } // $9.99", indent: "", unit: "")
         XCTAssertEqual(stops.text, "f(, name) {  } // .99")
+        let escaped = Snippets.expand("echo \\$1 $1 \\$", indent: "", unit: "")
+        XCTAssertEqual(escaped.text, "echo $1  $")
+        XCTAssertEqual(escaped.stops, [NSRange(location: 8, length: 0)])
         XCTAssertEqual(stops.stops, [NSRange(location: 4, length: 4), NSRange(location: 2, length: 0), NSRange(location: 18, length: 0), NSRange(location: 12, length: 0)])
     }
 
@@ -213,6 +216,8 @@ final class MoreToolsTests: XCTestCase {
         XCTAssertEqual(NameStyle.next("max-line-count"), "MAX_LINE_COUNT")
         XCTAssertEqual(NameStyle.next("MAX_LINE_COUNT"), "maxLineCount")
         XCTAssertEqual(NameStyle.next("MaxLine"), "max_line")
+        XCTAssertEqual(NameStyle.next("_privateName"), "_private_name")
+        XCTAssertEqual(NameStyle.next("__init_value"), "__init-value")
         XCTAssertNil(NameStyle.next("word"))
         XCTAssertNil(NameStyle.next(""))
     }
@@ -252,6 +257,7 @@ final class MoreToolsTests: XCTestCase {
         XCTAssertEqual(Convert.timestamp("2026-10-02 08:05:15"), "1790928315")
         XCTAssertEqual(Convert.timestamp("1970-01-02"), "86400")
         XCTAssertNil(Convert.timestamp("soon"))
+        XCTAssertNil(Convert.timestamp("255"))
         XCTAssertEqual(Convert.hex("31"), "0x1F")
         XCTAssertEqual(Convert.hex("0x1f"), "31")
         XCTAssertEqual(Convert.hex("ff"), "255")
