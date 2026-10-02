@@ -91,6 +91,10 @@ enum MainMenu {
         add(find, "Find Previous", #selector(EditorWindowController.findPrevious(_:)), "g", [.command, .shift])
         add(find, "Find All", #selector(EditorWindowController.findAll(_:)), "f", [.command, .control])
         add(find, "Use Selection for Find", #selector(EditorWindowController.useSelectionForFind(_:)), "e")
+        add(find, "Find in Open Documents…", #selector(EditorWindowController.showFindInDocuments(_:)), "f", [.command, .shift])
+        find.addItem(.separator())
+        add(find, "Keep Matching Lines", #selector(EditorWindowController.keepMatchingLines(_:)))
+        add(find, "Delete Matching Lines", #selector(EditorWindowController.deleteMatchingLines(_:)))
 
         let selection = group("Selection", in: edit)
         add(selection, "Expand", #selector(EditorTextView.expandSelection(_:)), up, [.control, .shift])
@@ -149,6 +153,8 @@ enum MainMenu {
         add(transform, "Zap Gremlins", #selector(EditorTextView.zapGremlins(_:)))
         add(transform, "Straighten Quotes", #selector(EditorTextView.straightenQuotes(_:)))
         transform.addItem(.separator())
+        add(transform, "Evaluate Expression", #selector(EditorTextView.evaluateExpression(_:)), "=", [.control])
+        add(transform, "Copy JSON Path", #selector(EditorWindowController.copyJSONPath(_:)))
         add(transform, "Copy SHA-256", #selector(EditorWindowController.copySHA256(_:)))
         add(transform, "Filter Through Command…", #selector(EditorWindowController.filterThroughCommand(_:)), "r", [.command, .option])
 
@@ -156,6 +162,8 @@ enum MainMenu {
         add(insert, "Date", #selector(EditorTextView.insertDate(_:)))
         add(insert, "Date and Time", #selector(EditorTextView.insertDateAndTime(_:)))
         add(insert, "UUID", #selector(EditorTextView.insertUUID(_:)))
+        insert.addItem(.separator())
+        add(insert, "Edit Snippets…", #selector(AppDelegate.editSnippets(_:)), target: delegate)
 
         let markdown = group("Markdown", in: edit)
         add(markdown, "Bold", #selector(EditorTextView.markdownBold(_:)), "b")
@@ -181,7 +189,10 @@ enum MainMenu {
         view.addItem(.separator())
         add(view, "Fold", #selector(EditorWindowController.foldBlock(_:)), left, [.command, .option])
         add(view, "Unfold", #selector(EditorWindowController.unfoldBlock(_:)), right, [.command, .option])
-        add(view, "Unfold All", #selector(EditorWindowController.unfoldAll(_:)))
+        add(view, "Fold All", #selector(EditorWindowController.foldLevel(_:)), left, [.command, .option, .shift]).tag = 1
+        add(view, "Fold Level 2", #selector(EditorWindowController.foldLevel(_:))).tag = 2
+        add(view, "Fold Level 3", #selector(EditorWindowController.foldLevel(_:))).tag = 3
+        add(view, "Unfold All", #selector(EditorWindowController.unfoldAll(_:)), right, [.command, .option, .shift])
         view.addItem(.separator())
         add(view, "Bigger", #selector(AppDelegate.changeFontSize(_:)), "+", target: delegate).tag = 1
         add(view, "Smaller", #selector(AppDelegate.changeFontSize(_:)), "-", target: delegate).tag = -1

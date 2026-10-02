@@ -64,6 +64,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         OpenQuickly.shared.show()
     }
 
+    @objc func editSnippets(_ sender: Any?) {
+        SnippetStore.shared.edit()
+    }
+
     @objc func showSettings(_ sender: Any?) {
         SettingsWindowController.shared.show()
     }

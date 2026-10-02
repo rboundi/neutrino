@@ -115,6 +115,13 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSText
     private var brokenFolds: [NSRange] = []
     /// The table shown in place of the text, for a CSV file.
     private var tableView: DelimitedTableView?
+    /// The bytes shown in place of the text, for a file that isn't text.
+    private var hexView: HexView?
+    /// Which reading of the file the bytes shown are from; see `Document.readCount`.
+    private var shownRead = 0
+    /// The lines changed since the file was opened or saved, for the marks beside them.
+    private var changes = ChangedLines()
+    private let changeGeneration = Generation()
     /// Bookmarked lines, each kept as a place in the text so it moves with edits.
     private var bookmarks: [Int] = []
     private var caretLine = 0
@@ -147,6 +154,8 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSText
             statusBar.update()
             updatePosition()
             updateGutterWidth()
+            updateTitleButton()
+            updateHexView()
         }
     }
 
@@ -190,7 +199,10 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSText
         updatePosition()
         window.makeFirstResponder(pane.textView)
         // After the first layout, which leaves the view scrolled past the space above the first line.
-        DispatchQueue.main.async { [weak self] in self?.restorePosition() }
+        DispatchQueue.main.async { [weak self] in
+            self?.restoreFolds()
+            self?.restorePosition()
+        }
     }
 
     required init?(coder: NSCoder) { fatalError() }
@@ -295,6 +307,7 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSText
         pane.gutter.bookmarks = { [weak self] in self?.bookmarkedLines() ?? [] }
         pane.gutter.foldMark = { [weak self] in self?.foldMark(forLineAt: $0) ?? 0 }
         pane.gutter.onFoldClick = { [weak self] in self?.toggleFold(atLine: $0) }
+        pane.gutter.changes = { [weak self] in self?.changes ?? ChangedLines() }
         pane.layoutManager.folds = folds
         let center = NotificationCenter.default
         center.addObserver(
@@ -305,7 +318,7 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSText
             object: pane.textView)
         configure(pane, from: nil)
         applySyntaxSettings(to: pane, of: document)
-        pane.textView.isEditable = !isLocked && !isBusy
+        pane.textView.isEditable = !isLocked && !isBusy && hexView == nil
     }
 
     /// Where the caret was when the file was last closed, unless something has already moved it.
@@ -320,10 +333,18 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSText
         }
     }
 
-    /// Remembers the caret position for the next time this file is opened.
+    /// Remembers the caret position and the folded blocks for the next time this file is opened.
     func savePosition() {
-        guard let url = doc?.fileURL else { return }
+        guard let url = doc?.fileURL, hexView == nil else { return }
         Prefs.setPosition(activeView.selectedRange().location, for: url)
+        Prefs.setFolds(folds, for: url, textLength: text.length)
+    }
+
+    /// Folds what was folded when the file was last closed.
+    private func restoreFolds() {
+        guard folds.isEmpty, let url = doc?.fileURL else { return }
+        let saved = Prefs.folds(for: url, textLength: text.length).sorted { $0.location < $1.location }
+        if !saved.isEmpty { setFolds(saved, changed: saved) }
     }
 
     // MARK: Settings
@@ -344,6 +365,7 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSText
             storage.setAttributes(new.textAttributes, range: NSRange(location: 0, length: storage.length))
         }
         if old.theme != new.theme { recolourText() }
+        hexView?.setFontSize(new.fontSize)
         for pane in panes { configure(pane, from: old) }
         statusBar.update()
     }
@@ -359,6 +381,7 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSText
         }
         if old == nil || old?.wrapLines != new.wrapLines { pane.applyWrap(new.wrapLines) }
         if let old, old.theme != new.theme { pane.applyTheme() }
+        if let old, old.changeMarks != new.changeMarks { scheduleChangeMarks() }
         // Only when the setting itself changes, so a choice made in the text's own menu stays.
         if old?.checkSpelling != new.checkSpelling {
             pane.textView.isContinuousSpellCheckingEnabled = new.checkSpelling
@@ -373,6 +396,7 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSText
 
     @objc private func themeChanged() {
         recolourText()
+        hexView?.applyTheme()
         for pane in panes {
             pane.applyTheme()
             pane.decorated.length = 0
@@ -428,11 +452,17 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSText
         switch menuItem.action {
         case #selector(toggleSplit(_:)):
             menuItem.state = panes.count > 1 ? .on : .off
-            return tableView == nil
+            return tableView == nil && hexView == nil
         case #selector(toggleTable(_:)):
             menuItem.state = tableView != nil ? .on : .off
             return tableView != nil || isDelimitedFile
         case #selector(unfoldAll(_:)): return !folds.isEmpty
+        case #selector(foldLevel(_:)): return text.length > 0 && tableView == nil
+        case #selector(copyJSONPath(_:)): return isJSON
+        case #selector(keepMatchingLines(_:)), #selector(deleteMatchingLines(_:)):
+            return !findBar.pattern.isEmpty && !isLocked && tableView == nil
+        case #selector(showFind(_:)), #selector(showFindInDocuments(_:)), #selector(goToLine(_:)):
+            return hexView == nil
         case #selector(toggleLock(_:)): menuItem.state = isLocked ? .on : .off
         case #selector(goToLastEdit(_:)): return !editPlaces.isEmpty
         case #selector(nextBookmark(_:)), #selector(previousBookmark(_:)), #selector(clearBookmarks(_:)):
@@ -449,11 +479,12 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSText
     }
 
     private func updateEditable() {
-        for pane in panes { pane.textView.isEditable = !isLocked && !isBusy }
+        for pane in panes { pane.textView.isEditable = !isLocked && !isBusy && hexView == nil }
     }
 
     /// Makes the document read-only, or editable again.
     @objc func toggleLock(_ sender: Any?) {
+        guard hexView == nil else { return NSSound.beep() }
         isLocked.toggle()
         updateEditable()
         statusBar.update()
@@ -800,7 +831,43 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSText
             self.scheduleHighlight(of: doc)
             self.refreshMatches()
             self.updatePosition()
+            self.scheduleChangeMarks()
         }
+    }
+
+    // MARK: Changed lines
+
+    /// Called by the document when the text it compares with is replaced: on opening, on
+    /// reverting, and after a save by hand.
+    func baselineChanged() {
+        scheduleChangeMarks(delay: 0)
+    }
+
+    /// Works out which lines differ from the file as it was opened or saved, once typing has
+    /// paused, and off the main thread.
+    private func scheduleChangeMarks(delay: Double = 0.4) {
+        let generation = changeGeneration.next()
+        guard style.changeMarks, let doc, let baseline = doc.baseline, text.length <= Document.changeMarkLimit else {
+            return setChanges(ChangedLines())
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self, weak doc] in
+            guard let self, let doc, self.changeGeneration.isCurrent(generation) else { return }
+            // Nothing unsaved and nothing to undo: the text is the one that was read.
+            if !doc.isDocumentEdited, doc.undoManager?.canUndo != true { return self.setChanges(ChangedLines()) }
+            let snapshot = Unchecked(value: doc.snapshotText())
+            self.workQueue.async {
+                let found = ChangedLines.compare(old: baseline, new: LineHashes.make(snapshot.value))
+                DispatchQueue.main.async {
+                    if self.changeGeneration.isCurrent(generation) { self.setChanges(found) }
+                }
+            }
+        }
+    }
+
+    private func setChanges(_ new: ChangedLines) {
+        guard new != changes else { return }
+        changes = new
+        for pane in panes { pane.gutter.needsDisplay = true }
     }
 
     @objc private func viewportChanged(_ notification: Notification) {
@@ -813,6 +880,7 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSText
 
     @objc private func formatChanged() {
         statusBar.update()
+        updateHexView()
         guard let doc else { return }
         // The document may have picked up an .editorconfig after being saved under a new name.
         let new = doc.style
@@ -842,6 +910,11 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSText
 
     private func updatePosition() {
         guard let index = doc?.lineIndex else { return }
+        if let data = doc?.binaryData {
+            var label = Self.count(data.count, "byte")
+            if data.count > HexView.limit { label += ", the first 16 MB shown" }
+            return statusBar.setPosition(label)
+        }
         let view = activeView
         let selection = view.selectedRange()
         let line = index.line(at: selection.location)
@@ -858,17 +931,45 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSText
             let lines = index.line(at: NSMaxRange(selection)) - line + 1
             if lines > 1 { parts.append(Self.count(lines, "line")) }
             label += "  (\(parts.joined(separator: ", ")) selected)"
+        } else if isJSON, let path = JSONPath.path(in: text, at: selection.location) {
+            label += "  \(path)"
         }
         statusBar.setPosition(label)
+    }
+
+    private var isJSON: Bool {
+        doc?.syntax?.definition.id == "json"
+            || ["json", "jsonc", "geojson", "webmanifest"].contains(doc?.fileURL?.pathExtension.lowercased() ?? "")
+    }
+
+    /// Copies where the caret is in a JSON document, such as `items[3].name`.
+    @objc func copyJSONPath(_ sender: Any?) {
+        guard let path = JSONPath.path(in: text, at: textView.selectedRange().location) else { return NSSound.beep() }
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(path, forType: .string)
+        statusBar.setPosition("Copied \(path)")
     }
 
     private static func count(_ number: Int, _ noun: String) -> String {
         "\(number.formatted()) \(noun)\(number == 1 ? "" : "s")"
     }
 
-    /// Shows the size of the whole document in the status bar until the caret next moves.
+    private static func number(_ value: Double) -> String {
+        value.formatted(.number.precision(.fractionLength(0...4)))
+    }
+
+    /// Shows the size of the whole document in the status bar until the caret next moves, or
+    /// what the numbers in the selection add up to when it has some.
     func showDocumentCounts() {
-        guard let index = doc?.lineIndex else { return }
+        guard let index = doc?.lineIndex, hexView == nil else { return }
+        let selection = activeView.selectedRange()
+        if selection.length > 0, selection.length <= 1_000_000,
+            let numbers = TextStats.numbers(in: text.substring(with: selection)), numbers.count > 1 {
+            return statusBar.setPosition(
+                "\(Self.count(numbers.count, "number")): sum \(Self.number(numbers.sum)), "
+                    + "average \(Self.number(numbers.sum / Double(numbers.count))), "
+                    + "least \(Self.number(numbers.min)), most \(Self.number(numbers.max))")
+        }
         let whole = NSRange(location: 0, length: text.length)
         var parts = [
             Self.count(index.count, "line"), Self.count(TextStats.words(in: text, range: whole), "word"),
@@ -915,8 +1016,16 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSText
 
     /// The fold that starts on the line beginning at `start`, if there is one.
     private func fold(onLineAt start: Int) -> NSRange? {
+        guard !folds.isEmpty else { return nil }
         let line = text.lineRange(for: NSRange(location: min(start, text.length), length: 0))
-        return folds.first { $0.location > line.location && $0.location <= NSMaxRange(line) }
+        // The folds are sorted by where they start.
+        var low = 0
+        var high = folds.count
+        while low < high {
+            let mid = (low + high) / 2
+            if folds[mid].location > line.location { high = mid } else { low = mid + 1 }
+        }
+        return low < folds.count && folds[low].location <= NSMaxRange(line) ? folds[low] : nil
     }
 
     private func foldMark(forLineAt start: Int) -> Int {
@@ -939,7 +1048,22 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSText
                 pane.textView.setSelectedRange(NSRange(location: range.location, length: 0))
             }
         }
-        setFolds(folds + [range], changed: [range])
+        setFolds((folds + [range]).sorted { $0.location < $1.location }, changed: [range])
+    }
+
+    /// Folds every block at the level the menu item carries: 1 for the outermost ones.
+    @objc func foldLevel(_ sender: NSMenuItem) {
+        let ranges = Folding.ranges(
+            in: text, level: max(sender.tag, 1), tabWidth: style.tabWidth, isCode: { [weak self] in self?.isCode(at: $0) ?? true })
+        guard !ranges.isEmpty else { return NSSound.beep() }
+        // A caret inside a fold would open it again, so it waits in front of it.
+        for pane in panes {
+            let caret = pane.textView.selectedRange().location
+            if let around = ranges.first(where: { caret > $0.location && caret < NSMaxRange($0) }) {
+                pane.textView.setSelectedRange(NSRange(location: around.location, length: 0))
+            }
+        }
+        setFolds(ranges, changed: folds + ranges)
     }
 
     /// Folds the block the caret is in: the one starting on its line, or else the nearest one
@@ -996,33 +1120,74 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSText
     private func showTable() {
         guard let doc else { return }
         let source = doc.textStorage.string
-        workQueue.async {
+        workQueue.async { [weak self] in
             let table = DelimitedTable(source, maxRows: 200_000)
             DispatchQueue.main.async { [weak self] in
                 guard let self, self.doc != nil else { return }
                 let view = self.tableView ?? DelimitedTableView()
                 view.onOpen = { [weak self] offset in self?.hideTable(goingTo: offset) }
+                view.onCount = { [weak self] shown, all in
+                    var label = shown == all ? Self.count(all, "row") : "\(shown.formatted()) of \(Self.count(all, "row"))"
+                    label += ", \(Self.count(table.columnCount, "column"))"
+                    if !table.isComplete { label += ", the first 200,000 lines" }
+                    self?.statusBar.setPosition(label)
+                }
                 view.show(table)
                 if self.tableView == nil {
                     self.tableView = view
-                    NSLayoutConstraint.deactivate(self.paneConstraints)
-                    self.editorArea.subviews.forEach { $0.removeFromSuperview() }
-                    view.translatesAutoresizingMaskIntoConstraints = false
-                    self.editorArea.addSubview(view)
-                    self.paneConstraints = [
-                        view.leadingAnchor.constraint(equalTo: self.editorArea.leadingAnchor),
-                        view.trailingAnchor.constraint(equalTo: self.editorArea.trailingAnchor),
-                        view.topAnchor.constraint(equalTo: self.editorArea.topAnchor),
-                        view.bottomAnchor.constraint(equalTo: self.editorArea.bottomAnchor),
-                    ]
-                    NSLayoutConstraint.activate(self.paneConstraints)
+                    self.fillEditorArea(with: view)
                     self.window?.makeFirstResponder(view.table)
                 }
-                var label = "\(Self.count(max(table.rows.count - 1, 0), "row")), \(Self.count(table.columnCount, "column"))"
-                if !table.isComplete { label += ", the first 200,000 lines" }
-                self.statusBar.setPosition(label)
             }
         }
+    }
+
+    /// Puts the keyboard in the table's filter field.
+    func focusTableFilter() {
+        tableView?.focusFilter()
+    }
+
+    /// Shows one view where the text is.
+    private func fillEditorArea(with view: NSView) {
+        NSLayoutConstraint.deactivate(paneConstraints)
+        editorArea.subviews.forEach { $0.removeFromSuperview() }
+        view.translatesAutoresizingMaskIntoConstraints = false
+        editorArea.addSubview(view)
+        paneConstraints = [
+            view.leadingAnchor.constraint(equalTo: editorArea.leadingAnchor),
+            view.trailingAnchor.constraint(equalTo: editorArea.trailingAnchor),
+            view.topAnchor.constraint(equalTo: editorArea.topAnchor),
+            view.bottomAnchor.constraint(equalTo: editorArea.bottomAnchor),
+        ]
+        NSLayoutConstraint.activate(paneConstraints)
+    }
+
+    // MARK: Binary files
+
+    /// Shows the bytes of a file that isn't text, or goes back to the text when the document
+    /// has been read as text after all.
+    private func updateHexView() {
+        guard let data = doc?.binaryData else {
+            guard hexView != nil else { return }
+            hexView = nil
+            layoutPanes()
+            updateEditable()
+            window?.makeFirstResponder(textView)
+            return
+        }
+        let view = hexView ?? HexView()
+        view.setFontSize(style.fontSize)
+        // Not on every change of format, or the view would jump back to the top.
+        if hexView == nil || shownRead != doc?.readCount { view.data = data }
+        shownRead = doc?.readCount ?? 0
+        if hexView == nil {
+            if panes.count > 1 { toggleSplit(nil) }
+            tableView = nil
+            hexView = view
+            fillEditorArea(with: view)
+            updateEditable()
+        }
+        updatePosition()
     }
 
     /// Back to the text, at the given place when a row was opened.
@@ -1076,6 +1241,25 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSText
 
     // MARK: Title
 
+    /// The arrow beside the title opens a panel to rename, tag and move the file. A document
+    /// that was never saved has no file, so it gets no arrow, and no "— Edited" either, which
+    /// the same button writes.
+    func updateTitleButton() {
+        guard let button = window?.standardWindowButton(.documentVersionsButton) else { return }
+        let hide = doc?.fileURL == nil
+        button.isHidden = hide
+        // The dash between the title and "Edited" is a label of its own beside the button. It
+        // comes back only while the button has something to say.
+        for case let label as NSTextField in button.superview?.subviews ?? [] where label.stringValue == "—" {
+            label.isHidden = hide || button.title.isEmpty
+        }
+    }
+
+    override func synchronizeWindowTitleWithDocumentName() {
+        super.synchronizeWindowTitleWithDocumentName()
+        updateTitleButton()
+    }
+
     /// Two open files with the same name get their folder beside the name, in the tab too.
     override func windowTitle(forDocumentDisplayName displayName: String) -> String {
         guard let doc, let folder = doc.fileURL?.deletingLastPathComponent().lastPathComponent else { return displayName }
@@ -1108,6 +1292,16 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSText
     }
 
     // MARK: Saving
+
+    /// Makes the next key typed start a new undo step. See `Document.save`.
+    func breakUndoCoalescing() {
+        for pane in panes { pane.textView.breakUndoCoalescing() }
+    }
+
+    func windowWillClose(_ notification: Notification) {
+        // Here and not in the document's `close`, which runs once the window has let go of it.
+        savePosition()
+    }
 
     /// Applies "trim trailing whitespace" and "end with a newline" as ordinary undoable edits.
     func tidyBeforeSaving() {

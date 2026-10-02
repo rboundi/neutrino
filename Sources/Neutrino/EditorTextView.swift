@@ -147,11 +147,32 @@ final class EditorTextView: NSTextView {
         if selection.length > 0, text.substring(with: selection).contains("\n") {
             return shiftRight(sender)
         }
+        if selection.length == 0, expandSnippet(at: selection.location) { return }
         guard usesSpaces else { return super.insertTab(sender) }
         let line = text.lineRange(for: NSRange(location: selection.location, length: 0))
         let column = selection.location - line.location
         let count = style.tabWidth - column % style.tabWidth
         insertText(String(repeating: " ", count: count), replacementRange: selection)
+    }
+
+    /// Replaces the abbreviation in front of the caret with its snippet, if it is one.
+    private func expandSnippet(at caret: Int) -> Bool {
+        let snippets = SnippetStore.shared.snippets
+        guard !snippets.isEmpty else { return false }
+        var start = caret
+        while start > 0, caret - start < 40, let c = character(at: start - 1), c.isLetter || c.isNumber || c == "_" {
+            start -= 1
+        }
+        let word = NSRange(location: start, length: caret - start)
+        guard word.length > 0, let body = snippets[text.substring(with: word)] else { return false }
+        let line = text.lineRange(for: NSRange(location: start, length: 0))
+        var end = line.location
+        while end < start, let c = character(at: end), c == " " || c == "\t" { end += 1 }
+        let indent = text.substring(with: NSRange(location: line.location, length: end - line.location))
+        let expanded = Snippets.expand(body, indent: indent, unit: indentUnit)
+        replace(word, with: expanded.text)
+        setSelectedRange(NSRange(location: start + expanded.caret, length: 0))
+        return true
     }
 
     override func insertBacktab(_ sender: Any?) {
@@ -1011,6 +1032,25 @@ final class EditorTextView: NSTextView {
         transformText { Indentation.convert($0, toSpaces: false, width: width) }
     }
 
+    /// Replaces the selected arithmetic, or the line the caret is on, with its result.
+    @objc func evaluateExpression(_ sender: Any?) {
+        var range = selectedRange()
+        if range.length == 0 {
+            range = text.lineRange(for: range)
+            // Without the line break and the space around the sum.
+            while range.length > 0, let c = character(at: NSMaxRange(range) - 1), c.isWhitespace { range.length -= 1 }
+            while range.length > 0, let c = character(at: range.location), c.isWhitespace {
+                range.location += 1
+                range.length -= 1
+            }
+        }
+        guard range.length > 0, range.length < 10_000, let value = Calculator.evaluate(text.substring(with: range))
+        else { return NSSound.beep() }
+        let result = Calculator.format(value)
+        replace(range, with: result)
+        setSelectedRange(NSRange(location: range.location, length: (result as NSString).length))
+    }
+
     /// Typed like any other text, so it goes to every cursor.
     private func type(_ string: String) {
         insertText(string, replacementRange: NSRange(location: NSNotFound, length: 0))
@@ -1174,9 +1214,24 @@ final class EditorTextView: NSTextView {
 /// Draws spaces, tabs and line breaks when "Show invisible characters" is on.
 final class EditorLayoutManager: NSLayoutManager, NSLayoutManagerDelegate {
     var showsInvisibles = false
-    /// The folded parts of the text. Their characters stay in the text; only their glyphs are
-    /// left out, and the first becomes an ellipsis.
-    var folds: [NSRange] = []
+    /// The folded parts of the text, sorted by where they start. Their characters stay in the
+    /// text; only their glyphs are left out, and the first becomes an ellipsis.
+    var folds: [NSRange] = [] {
+        didSet {
+            guard folds != oldValue else { return }
+            // A fold inside another hides nothing more, so only the outer ones are kept.
+            hidden = []
+            for fold in folds {
+                if let last = hidden.last, fold.location < NSMaxRange(last) {
+                    hidden[hidden.count - 1].length = max(NSMaxRange(last), NSMaxRange(fold)) - last.location
+                } else {
+                    hidden.append(fold)
+                }
+            }
+        }
+    }
+    /// What is hidden: the folds with the nested and overlapping ones merged.
+    private var hidden: [NSRange] = []
 
     override init() {
         super.init()
@@ -1185,19 +1240,37 @@ final class EditorLayoutManager: NSLayoutManager, NSLayoutManagerDelegate {
 
     required init?(coder: NSCoder) { fatalError() }
 
+    /// The first hidden range that ends after `index`; `hidden.count` when there is none.
+    private func firstHidden(endingAfter index: Int) -> Int {
+        var low = 0
+        var high = hidden.count
+        while low < high {
+            let mid = (low + high) / 2
+            if NSMaxRange(hidden[mid]) > index { high = mid } else { low = mid + 1 }
+        }
+        return low
+    }
+
     /// A line break or tab inside a fold neither breaks the line nor takes room.
     func layoutManager(
         _ layoutManager: NSLayoutManager, shouldUse action: NSLayoutManager.ControlCharacterAction,
         forControlCharacterAt characterIndex: Int
     ) -> NSLayoutManager.ControlCharacterAction {
-        folds.contains { NSLocationInRange(characterIndex, $0) } ? .zeroAdvancement : action
+        guard !hidden.isEmpty else { return action }
+        let found = firstHidden(endingAfter: characterIndex)
+        return found < hidden.count && hidden[found].location <= characterIndex ? .zeroAdvancement : action
     }
 
     /// Lays out the given parts of the text again, after a fold was made or opened there.
     func refold(_ ranges: [NSRange]) {
-        let length = textStorage?.length ?? 0
+        let whole = NSRange(location: 0, length: textStorage?.length ?? 0)
+        // Many at once, as with Fold All: one pass over everything between them is quicker.
+        var ranges = ranges
+        if ranges.count > 50, let first = ranges.map(\.location).min(), let last = ranges.map({ NSMaxRange($0) }).max() {
+            ranges = [NSRange(location: first, length: last - first)]
+        }
         for range in ranges {
-            let clamped = NSIntersectionRange(range, NSRange(location: 0, length: length))
+            let clamped = NSIntersectionRange(range, whole)
             guard clamped.length > 0 else { continue }
             invalidateGlyphs(forCharacterRange: clamped, changeInLength: 0, actualCharacterRange: nil)
             invalidateLayout(forCharacterRange: clamped, actualCharacterRange: nil)
@@ -1211,37 +1284,35 @@ final class EditorLayoutManager: NSLayoutManager, NSLayoutManagerDelegate {
     ) -> Int {
         let count = glyphRange.length
         // Nothing folded here: let the layout manager do what it always does.
-        guard count > 0, !folds.isEmpty else { return 0 }
-        let first = characterIndexes[0]
-        let last = characterIndexes[count - 1]
-        let near = folds.filter { $0.location <= last && NSMaxRange($0) > first }
-        guard !near.isEmpty else { return 0 }
+        guard count > 0, !hidden.isEmpty, let string = textStorage?.mutableString else { return 0 }
+        var fold = firstHidden(endingAfter: characterIndexes[0])
+        guard fold < hidden.count, hidden[fold].location <= characterIndexes[count - 1] else { return 0 }
 
-        // Each outermost fold shows "…" in place of its first character that isn't a line
-        // break (a line break would still break the line); everything else takes no room.
-        var marks = Set<Int>()
-        if let string = textStorage?.mutableString {
-            for fold in near where !folds.contains(where: { $0 != fold && $0.location <= fold.location && NSMaxRange($0) >= NSMaxRange(fold) }) {
-                var index = fold.location
-                while index < NSMaxRange(fold), index < string.length, string.character(at: index) == 0x0A { index += 1 }
-                if index < NSMaxRange(fold) { marks.insert(index) }
-            }
-        }
         var newGlyphs = Array(UnsafeBufferPointer(start: glyphs, count: count))
         var newProperties = Array(UnsafeBufferPointer(start: properties, count: count))
         var ellipsis: CGGlyph = 0
         var character: unichar = 0x2026
         CTFontGetGlyphsForCharacters(font, &character, &ellipsis, 1)
+        // Each fold shows "…" in place of its first character that isn't a line break (a line
+        // break would still break the line); everything else in it takes no room.
+        var mark = -1
+        var markedFold = -1
         for i in 0..<count {
             let index = characterIndexes[i]
-            guard near.contains(where: { NSLocationInRange(index, $0) }) else { continue }
-            if marks.contains(index), ellipsis != 0 {
+            while fold < hidden.count, NSMaxRange(hidden[fold]) <= index { fold += 1 }
+            guard fold < hidden.count else { break }
+            guard hidden[fold].location <= index else { continue }
+            if markedFold != fold {
+                markedFold = fold
+                mark = hidden[fold].location
+                let end = min(NSMaxRange(hidden[fold]), string.length)
+                while mark < end, string.character(at: mark) == 0x0A { mark += 1 }
+            }
+            if index == mark, ellipsis != 0 {
                 newGlyphs[i] = ellipsis
                 newProperties[i] = []
-            } else if newProperties[i].contains(.controlCharacter) {
-                // A line break stays a control character; the method below gives it no effect.
-                continue
-            } else {
+            } else if !newProperties[i].contains(.controlCharacter) {
+                // A line break stays a control character; the method above gives it no effect.
                 newProperties[i] = .null
             }
         }
@@ -1290,6 +1361,8 @@ final class GutterView: NSView {
     var foldMark: (Int) -> Int = { _ in 0 }
     /// Called with the first character of the line whose marker was clicked.
     var onFoldClick: (Int) -> Void = { _ in }
+    /// The lines changed since the file was opened or saved.
+    var changes: () -> ChangedLines = { ChangedLines() }
 
     /// A click beside a line folds it, or opens it again.
     override func mouseDown(with event: NSEvent) {
@@ -1333,6 +1406,7 @@ final class GutterView: NSView {
         let current: [NSAttributedString.Key: Any] = [.font: font, .foregroundColor: NSColor.labelColor]
 
         let marked = bookmarks()
+        let changes = self.changes()
         func drawFoldMark(_ mark: Int, at rect: NSRect) {
             guard mark > 0 else { return }
             let middle = rect.midY + offset
@@ -1357,7 +1431,15 @@ final class GutterView: NSView {
         func drawNumber(_ line: Int, at rect: NSRect) {
             if marked.contains(line) {
                 NSColor.controlAccentColor.setFill()
-                NSBezierPath(ovalIn: NSRect(x: 2, y: rect.midY + offset - 2.5, width: 5, height: 5)).fill()
+                NSBezierPath(ovalIn: NSRect(x: 4, y: rect.midY + offset - 2.5, width: 5, height: 5)).fill()
+            }
+            if changes.changed.contains(line) {
+                Theme.changedLine.setFill()
+                NSRect(x: 0, y: rect.minY + offset, width: 2, height: rect.height).fill()
+            } else if changes.removed.contains(line) {
+                // Something was taken out above this line: a short mark at its top.
+                Theme.removedLine.setFill()
+                NSRect(x: 0, y: rect.minY + offset - 1, width: 5, height: 2).fill()
             }
             let label = String(line + 1) as NSString
             let attributes = line == currentLine ? current : normal

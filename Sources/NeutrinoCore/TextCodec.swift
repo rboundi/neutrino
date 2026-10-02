@@ -101,6 +101,15 @@ public enum TextCodec {
         return DecodedText(text: text, encoding: used, hasBOM: hasBOM, lineEnding: lineEnding)
     }
 
+    /// Whether the bytes are something other than text: a zero byte near the start, in a file
+    /// that doesn't begin with a UTF-16 or UTF-32 byte order mark.
+    public static func looksBinary(_ data: Data) -> Bool {
+        if data.starts(with: [0xFF, 0xFE]) || data.starts(with: [0xFE, 0xFF]) || data.starts(with: [0x00, 0x00, 0xFE, 0xFF]) {
+            return false
+        }
+        return data.prefix(8192).contains(0)
+    }
+
     public static func encode(
         _ text: String, encoding: String.Encoding, hasBOM: Bool, lineEnding: LineEnding
     ) -> Data? {

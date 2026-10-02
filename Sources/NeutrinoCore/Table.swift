@@ -90,6 +90,46 @@ public struct DelimitedTable {
 
     /// The widest row, which is how many columns the table needs.
     public var columnCount: Int { rows.reduce(0) { max($0, $1.count) } }
+
+    private static func cell(_ row: [String], _ index: Int) -> String { index < row.count ? row[index] : "" }
+
+    /// The rows as a Markdown table under a line of titles.
+    public static func markdown(titles: [String], rows: [[String]]) -> String {
+        func line(_ row: [String]) -> String {
+            let cells = titles.indices.map { index in
+                cell(row, index).replacingOccurrences(of: "|", with: "\\|").replacingOccurrences(of: "\n", with: " ")
+            }
+            return "| " + cells.joined(separator: " | ") + " |"
+        }
+        let rule = "| " + titles.map { _ in "---" }.joined(separator: " | ") + " |"
+        return ([line(titles), rule] + rows.map(line)).joined(separator: "\n") + "\n"
+    }
+
+    private static let number = try! NSRegularExpression(pattern: "^-?(0|[1-9][0-9]*)(\\.[0-9]+)?([eE][+-]?[0-9]+)?$")
+
+    /// The rows as a JSON array with one object per row, keyed by the titles in their order.
+    /// A field that is written as a JSON number stays a number; every other field is a string.
+    public static func json(titles: [String], rows: [[String]]) -> String {
+        func quoted(_ text: String) -> String { "\"" + (TextTransform.jsonEscape(text) ?? "") + "\"" }
+        let keys = titles.map(quoted)
+        let objects = rows.map { row -> String in
+            let pairs = keys.indices.map { index -> String in
+                let field = cell(row, index)
+                let isNumber = number.firstMatch(in: field, range: NSRange(location: 0, length: field.utf16.count)) != nil
+                return keys[index] + ": " + (isNumber ? field : quoted(field))
+            }
+            return "  {" + pairs.joined(separator: ", ") + "}"
+        }
+        return "[\n" + objects.joined(separator: ",\n") + "\n]\n"
+    }
+
+    /// The rows as lines of tab-separated fields, for pasting into a spreadsheet.
+    public static func tabSeparated(_ rows: [[String]]) -> String {
+        rows.map { row in
+            row.map { $0.replacingOccurrences(of: "\t", with: " ").replacingOccurrences(of: "\n", with: " ") }
+                .joined(separator: "\t")
+        }.joined(separator: "\n") + "\n"
+    }
 }
 
 /// Which part of the text is hidden when a block is folded.
@@ -182,5 +222,37 @@ public enum Folding {
         }
         guard let end, end > last + 1 else { return nil }
         return NSRange(location: last + 1, length: end - last - 1)
+    }
+
+    /// Every block to hide when the text is folded down to `level`: 1 folds the outermost
+    /// blocks, 2 the blocks inside those, and so on.
+    public static func ranges(
+        in string: NSString, level: Int, tabWidth: Int, isCode: (Int) -> Bool = { _ in true }
+    ) -> [NSRange] {
+        var result: [NSRange] = []
+        // Where the blocks around the current line end.
+        var ends: [Int] = []
+        var start = 0
+        while start < string.length {
+            let line = string.lineRange(for: NSRange(location: start, length: 0))
+            // A block that ends on this line, as in `} else {`, is no longer around it.
+            while let last = ends.last, NSMaxRange(line) > last { ends.removeLast() }
+            var next = NSMaxRange(line)
+            if let range = range(in: string, lineStart: start, tabWidth: tabWidth, isCode: isCode) {
+                if ends.count + 1 >= level {
+                    result.append(range)
+                    let end = NSMaxRange(range)
+                    let closing = string.lineRange(for: NSRange(location: end, length: 0))
+                    // The line with the closing bracket may open the next block; the last line
+                    // of an indented block can't.
+                    let bracket = end < string.length && isCloser(string.character(at: end))
+                    next = max(next, bracket ? closing.location : NSMaxRange(closing))
+                } else {
+                    ends.append(NSMaxRange(range))
+                }
+            }
+            start = next
+        }
+        return result
     }
 }

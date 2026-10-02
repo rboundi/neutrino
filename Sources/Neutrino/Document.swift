@@ -24,6 +24,15 @@ final class Document: NSDocument, NSTextStorageDelegate {
     private(set) var syntax: CompiledSyntax?
     /// Set once the syntax is picked by hand, so saving under a new name doesn't change it.
     private var syntaxIsManual = false
+    /// The bytes of a file that isn't text. It is shown as hex and can't be edited.
+    private(set) var binaryData: Data?
+    /// Counts the times the file was read, so the window can tell new bytes from the ones it shows.
+    private(set) var readCount = 0
+    /// The lines of the text as it was opened or last saved by hand, as one number each, for
+    /// marking the lines changed since. Nil for a new document and for a very long text.
+    private(set) var baseline: [Int]?
+    /// Longest text, in UTF-16 units, whose changed lines are marked.
+    static let changeMarkLimit = 2_000_000
     /// Whether the last autosave failed, so the error is shown once and not on every attempt.
     private var autosaveFailed = false
 
@@ -33,6 +42,7 @@ final class Document: NSDocument, NSTextStorageDelegate {
         var encoding: String.Encoding
         var hasBOM: Bool
         var lineEnding: LineEnding
+        var binary: Data?
     }
     private var snapshot: Snapshot?
     private let snapshotLock = NSLock()
@@ -101,6 +111,7 @@ final class Document: NSDocument, NSTextStorageDelegate {
         didSet {
             guard oldValue != fileURL else { return }
             detectSyntax()
+            editor?.updateTitleButton()
             let config = fileURL.map { EditorConfig.load(for: $0) } ?? EditorConfig()
             if config != editorConfig {
                 editorConfig = config
@@ -131,6 +142,16 @@ final class Document: NSDocument, NSTextStorageDelegate {
     }
 
     private func load(_ data: Data, as encoding: String.Encoding?) throws {
+        readCount += 1
+        // Asked for as text, with Reopen with Encoding, a binary file is shown as text.
+        if encoding == nil, TextCodec.looksBinary(data) {
+            binaryData = data
+            baseline = nil
+            setText("")
+            NotificationCenter.default.post(name: Self.formatDidChange, object: self)
+            return
+        }
+        binaryData = nil
         guard let decoded = TextCodec.decode(data, as: encoding) else {
             throw NSError(domain: NSCocoaErrorDomain, code: NSFileReadInapplicableStringEncodingError)
         }
@@ -139,8 +160,14 @@ final class Document: NSDocument, NSTextStorageDelegate {
         lineEnding = decoded.lineEnding
         detectedIndentation = Indentation.detect(in: decoded.text as NSString)
         setText(decoded.text)
+        setBaseline(textStorage.length <= Self.changeMarkLimit ? LineHashes.make(textStorage.mutableString) : nil)
         detectSyntax()
         NotificationCenter.default.post(name: Self.formatDidChange, object: self)
+    }
+
+    private func setBaseline(_ new: [Int]?) {
+        baseline = new
+        editor?.baselineChanged()
     }
 
     /// Replaces the whole text without leaving an undo step.
@@ -175,15 +202,28 @@ final class Document: NSDocument, NSTextStorageDelegate {
         to url: URL, ofType typeName: String, for saveOperation: NSDocument.SaveOperationType,
         completionHandler: @escaping (Error?) -> Void
     ) {
+        // The text view adds typed characters to the undo step before them for as long as typing
+        // goes on. A document only learns that it has changed from a new undo step, so without
+        // this, typing that carries on after a save would not count as a change and would
+        // never be saved.
+        editor?.breakUndoCoalescing()
         // Only when the user saves: tidying during an automatic save would move text under the caret.
         if [.saveOperation, .saveAsOperation, .saveToOperation].contains(saveOperation) {
             editor?.tidyBeforeSaving()
         }
         setSnapshot(Snapshot(
             text: textStorage.mutableString.copy() as! String, encoding: encoding, hasBOM: hasBOM,
-            lineEnding: lineEnding))
+            lineEnding: lineEnding, binary: binaryData))
+        // A save by hand is the new starting point for the changed-line marks; an automatic
+        // one isn't, or the marks would go after every pause in typing.
+        let byHand = [.saveOperation, .saveAsOperation].contains(saveOperation)
+        var saved: [Int]?
+        if byHand, binaryData == nil, textStorage.length <= Self.changeMarkLimit {
+            saved = LineHashes.make(textStorage.mutableString)
+        }
         super.save(to: url, ofType: typeName, for: saveOperation) { [weak self] error in
             self?.setSnapshot(nil)
+            if error == nil, byHand { self?.setBaseline(saved) }
             completionHandler(error)
         }
     }
@@ -206,6 +246,8 @@ final class Document: NSDocument, NSTextStorageDelegate {
         // The text is already copied, so editing can carry on while it is encoded and written.
         unblockUserInteraction()
         guard let saved else { throw NSError(domain: NSCocoaErrorDomain, code: NSFileWriteUnknownError) }
+        // A binary file is written back as it was read.
+        if let binary = saved.binary { return binary }
         let encoding = saved.encoding
         guard let data = TextCodec.encode(
             saved.text, encoding: saved.encoding, hasBOM: saved.hasBOM, lineEnding: saved.lineEnding)
@@ -261,6 +303,12 @@ final class Document: NSDocument, NSTextStorageDelegate {
         guard lineEnding != self.lineEnding else { return }
         self.lineEnding = lineEnding
         formatChanged()
+    }
+
+    override func updateChangeCount(_ change: NSDocument.ChangeType) {
+        super.updateChangeCount(change)
+        // Once the title bar has caught up, which is when it would show "— Edited".
+        if fileURL == nil { DispatchQueue.main.async { [weak self] in self?.editor?.updateTitleButton() } }
     }
 
     private func formatChanged() {
@@ -410,7 +458,7 @@ final class Document: NSDocument, NSTextStorageDelegate {
         old: String, named oldName: String, new: String, named newName: String, title: String, same: String
     ) {
         // Off the main thread: comparing two very different long files takes a while.
-        DispatchQueue.global(qos: .userInitiated).async {
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             let diff = UnifiedDiff.make(old: old, new: new, oldName: oldName, newName: newName)
             DispatchQueue.main.async { [weak self] in self?.showComparison(diff, title: title, same: same) }
         }

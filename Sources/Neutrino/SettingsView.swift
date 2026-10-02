@@ -96,6 +96,7 @@ private struct EditorSettings: View {
     @AppStorage(Prefs.markTrailingSpaces) private var markTrailingSpaces = false
     @AppStorage(Prefs.showColours) private var showColours = false
     @AppStorage(Prefs.scrollPastEnd) private var scrollPastEnd = false
+    @AppStorage(Prefs.changeMarks) private var changeMarks = true
     @AppStorage(Prefs.trimTrailingWhitespace) private var trimTrailingWhitespace = false
     @AppStorage(Prefs.ensureFinalNewline) private var ensureFinalNewline = false
 
@@ -146,6 +147,7 @@ private struct EditorSettings: View {
                 }
                 Toggle("Indent guides", isOn: $indentGuides)
                 Toggle("Mark spaces at the end of lines", isOn: $markTrailingSpaces)
+                Toggle("Mark lines changed since the last save", isOn: $changeMarks)
                 Toggle("Underline hex colours in their colour", isOn: $showColours)
                 Toggle("Scroll past the end of the text", isOn: $scrollPastEnd)
                 Toggle("Check spelling while typing", isOn: $checkSpelling)

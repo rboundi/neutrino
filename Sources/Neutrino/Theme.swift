@@ -16,6 +16,8 @@ enum Theme {
     static var occurrence: NSColor { text.withAlphaComponent(0.13) }
     static var pageGuide: NSColor { text.withAlphaComponent(0.12) }
     static var trailingSpace: NSColor { NSColor.systemRed.withAlphaComponent(0.3) }
+    static var changedLine: NSColor { NSColor.systemGreen.withAlphaComponent(0.8) }
+    static var removedLine: NSColor { NSColor.systemRed.withAlphaComponent(0.8) }
 
     /// The built-in colours as they are on a light background, for printing on paper.
     static func printColor(for scope: Scope) -> NSColor {

@@ -40,9 +40,12 @@ enum Prefs {
     static let markTrailingSpaces = "markTrailingSpaces"
     static let showColours = "showColours"
     static let scrollPastEnd = "scrollPastEnd"
+    static let changeMarks = "changeMarks"
     static let alignText = "alignText"
     /// Where the caret was in recently closed files, oldest first, as "location\tpath".
     static let positions = "positions"
+    /// The folded blocks of recently closed files, as "length:location,length …\tpath".
+    static let folds = "folds"
     /// The macOS setting that keeps an app's windows, and the unsaved text in them, across a quit.
     static let keepWindows = "NSQuitAlwaysKeepsWindows"
     static let checkForUpdates = "checkForUpdates"
@@ -79,6 +82,7 @@ enum Prefs {
             markTrailingSpaces: false,
             showColours: false,
             scrollPastEnd: false,
+            changeMarks: true,
             checkForUpdates: true,
         ])
     }
@@ -122,6 +126,34 @@ enum Prefs {
         UserDefaults.standard.set(Array(entries.suffix(300)), forKey: positions)
     }
 
+    /// The blocks that were folded when a file was last closed. They are only given back for a
+    /// text of the same length, since they are places in the text.
+    static func folds(for url: URL, textLength: Int) -> [NSRange] {
+        let suffix = "\t" + url.path
+        guard let entry = UserDefaults.standard.stringArray(forKey: folds)?.last(where: { $0.hasSuffix(suffix) })
+        else { return [] }
+        let parts = entry.dropLast(suffix.count).split(separator: ":")
+        guard parts.count == 2, Int(parts[0]) == textLength else { return [] }
+        return parts[1].split(separator: " ").compactMap { pair in
+            let numbers = pair.split(separator: ",").compactMap { Int($0) }
+            guard numbers.count == 2, numbers[0] > 0, numbers[1] > 0, numbers[0] + numbers[1] <= textLength else { return nil }
+            return NSRange(location: numbers[0], length: numbers[1])
+        }
+    }
+
+    static func setFolds(_ ranges: [NSRange], for url: URL, textLength: Int) {
+        let suffix = "\t" + url.path
+        var entries = UserDefaults.standard.stringArray(forKey: folds) ?? []
+        let known = entries.contains { $0.hasSuffix(suffix) }
+        guard known || !ranges.isEmpty else { return }
+        entries.removeAll { $0.hasSuffix(suffix) }
+        if !ranges.isEmpty {
+            let list = ranges.prefix(500).map { "\($0.location),\($0.length)" }.joined(separator: " ")
+            entries.append("\(textLength):\(list)" + suffix)
+        }
+        UserDefaults.standard.set(Array(entries.suffix(100)), forKey: folds)
+    }
+
     static var appearanceMode: AppearanceMode {
         AppearanceMode(rawValue: UserDefaults.standard.string(forKey: appearance) ?? "") ?? .system
     }
@@ -146,6 +178,8 @@ struct EditorStyle: Equatable {
     /// Whether hex colours such as #3E8087 are underlined in their own colour.
     var showColours: Bool
     var scrollPastEnd: Bool
+    /// Whether lines changed since the file was opened or saved get a bar beside their number.
+    var changeMarks: Bool
     /// The installed theme in use; empty for the built-in colours.
     var theme: String
 
@@ -168,6 +202,7 @@ struct EditorStyle: Equatable {
             markTrailingSpaces: defaults.bool(forKey: Prefs.markTrailingSpaces),
             showColours: defaults.bool(forKey: Prefs.showColours),
             scrollPastEnd: defaults.bool(forKey: Prefs.scrollPastEnd),
+            changeMarks: defaults.bool(forKey: Prefs.changeMarks),
             theme: defaults.string(forKey: Prefs.theme) ?? "")
     }
 

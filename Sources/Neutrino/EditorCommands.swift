@@ -81,7 +81,7 @@ extension EditorWindowController {
             process.terminate()
         }
         DispatchQueue.main.asyncAfter(deadline: .now() + Self.filterTimeout, execute: timer)
-        queue.async {
+        queue.async { [weak self] in
             process.waitUntilExit()
             group.wait()
             DispatchQueue.main.async { [weak self] in

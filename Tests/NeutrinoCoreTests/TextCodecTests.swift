@@ -2,6 +2,13 @@ import XCTest
 @testable import NeutrinoCore
 
 final class TextCodecTests: XCTestCase {
+    func testBinaryDetection() {
+        XCTAssertTrue(TextCodec.looksBinary(Data([0x89, 0x50, 0x4E, 0x47, 0x00, 0x01])))
+        XCTAssertFalse(TextCodec.looksBinary(Data("plain text".utf8)))
+        XCTAssertFalse(TextCodec.looksBinary(Data([0xFF, 0xFE, 0x61, 0x00])))
+        XCTAssertFalse(TextCodec.looksBinary(Data()))
+    }
+
     func testUTF8RoundTrip() throws {
         let decoded = try XCTUnwrap(TextCodec.decode(Data("héllo\nwörld\n".utf8)))
         XCTAssertEqual(decoded.encoding, .utf8)

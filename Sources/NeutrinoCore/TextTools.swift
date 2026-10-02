@@ -91,6 +91,26 @@ public enum TextStats {
         }
         return count
     }
+
+    private static let number = try! NSRegularExpression(
+        pattern: "(?<![A-Za-z0-9_.])-?[0-9]+(?:\\.[0-9]+)?(?![A-Za-z0-9_]|\\.[0-9])")
+
+    /// The numbers written in the text, added up. Nil when there are none.
+    public static func numbers(in text: String) -> (count: Int, sum: Double, min: Double, max: Double)? {
+        let source = text as NSString
+        var count = 0
+        var sum = 0.0
+        var least = Double.infinity
+        var most = -Double.infinity
+        number.enumerateMatches(in: text, range: NSRange(location: 0, length: source.length)) { match, _, _ in
+            guard let match, let value = Double(source.substring(with: match.range)) else { return }
+            count += 1
+            sum += value
+            least = min(least, value)
+            most = max(most, value)
+        }
+        return count > 0 ? (count, sum, least, most) : nil
+    }
 }
 
 /// Changes to the selected text that need nothing but Foundation.

@@ -39,9 +39,64 @@ extension EditorWindowController: FindBarDelegate {
 
     // MARK: Menu commands
 
-    @objc func showFind(_ sender: Any?) {
-        // Searching works on the text, so a table gives way to it.
+    /// Opens the find bar set to search every open document.
+    @objc func showFindInDocuments(_ sender: Any?) {
         if isShowingTable { toggleTable(nil) }
+        showFind(sender)
+        findBar.scope = .allDocuments
+        selectionScope = nil
+        refreshMatches()
+    }
+
+    @objc func keepMatchingLines(_ sender: Any?) { filterLines(keep: true) }
+    @objc func deleteMatchingLines(_ sender: Any?) { filterLines(keep: false) }
+
+    /// Keeps only the lines a match of the search touches, or takes those lines out, in the
+    /// document or the selection. One undo step.
+    private func filterLines(keep: Bool) {
+        guard textView.isEditable, ensureMatches() else { return NSSound.beep() }
+        // Without a match, Keep would empty the text and Delete would do nothing.
+        guard !matches.isEmpty else {
+            findMessage = "No matches"
+            NSSound.beep()
+            return updateFindStatus()
+        }
+        let scope = text.lineRange(for: searchRange)
+        let end = NSMaxRange(scope)
+        let result = NSMutableString()
+        var removed = 0
+        var index = Self.firstIndex(in: matches, endingAfter: scope.location - 1) { $0 }
+        var position = scope.location
+        while position < end {
+            let line = text.lineRange(for: NSRange(location: position, length: 0))
+            // Past the matches that end before this line. One that runs over several lines
+            // counts for each of them.
+            while index < matches.count, NSMaxRange(matches[index]) <= line.location,
+                matches[index].location < line.location || matches[index].length > 0 {
+                index += 1
+            }
+            let matched = index < matches.count && matches[index].location < NSMaxRange(line)
+            if matched == keep { result.append(text.substring(with: line)) } else { removed += 1 }
+            position = NSMaxRange(line)
+        }
+        guard removed > 0 else {
+            findMessage = "No lines to remove"
+            return updateFindStatus()
+        }
+        // When the last line goes, the line break before it goes with it.
+        if end == text.length, result.length > 0, text.character(at: end - 1) != 0x0A,
+            result.character(at: result.length - 1) == 0x0A {
+            result.deleteCharacters(in: NSRange(location: result.length - 1, length: 1))
+        }
+        textView.replace(scope, with: result as String)
+        textView.setSelectedRange(NSRange(location: scope.location, length: 0))
+        findMessage = "Removed \(removed) line\(removed == 1 ? "" : "s")"
+        if findBar.isHidden { statusBar.setPosition(findMessage ?? "") } else { updateFindStatus() }
+    }
+
+    @objc func showFind(_ sender: Any?) {
+        // A table has its own field, which keeps the rows that contain what is typed.
+        if isShowingTable { return focusTableFilter() }
         findBar.syncOptions()
         let selection = textView.selectedRange()
         let selected = selection.length > 0 ? text.substring(with: selection) : ""
