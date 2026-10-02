@@ -17,10 +17,15 @@ fail() { echo "error: $*" >&2; exit 1; }
 
 [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || fail "version must look like 1.2.3"
 [[ "$(git branch --show-current)" == main ]] || fail "switch to main first"
-git diff --quiet && git diff --cached --quiet || fail "commit or stash your changes first"
+# Untracked files count too: a source file that was never committed would still be compiled in.
+[[ -z "$(git status --porcelain)" ]] || fail "commit, stash or remove your changes first: $(git status --porcelain | head -3)"
 git fetch -q origin main --tags
 [[ "$(git rev-parse HEAD)" == "$(git rev-parse origin/main)" ]] || fail "push main first"
-! git rev-parse -q --verify "refs/tags/$TAG" >/dev/null || fail "$TAG already exists"
+# A tag left by a run that stopped before the release was published is taken up again.
+if git rev-parse -q --verify "refs/tags/$TAG" >/dev/null; then
+  [[ "$(git rev-parse "$TAG^{commit}")" == "$(git rev-parse HEAD)" ]] || fail "$TAG already exists on another commit"
+  ! gh release view "$TAG" --repo "$REPO" >/dev/null 2>&1 || fail "$TAG is already released"
+fi
 CI=$(gh run list --repo "$REPO" --workflow ci.yml --commit "$(git rev-parse HEAD)" --json conclusion -q '.[0].conclusion')
 [[ "$CI" == success ]] || fail "CI hasn't passed for this commit (status: ${CI:-no run})"
 
@@ -34,7 +39,7 @@ cp "$DMG" build/Neutrino.dmg
 cp "$ZIP" build/Neutrino.zip
 
 echo "==> Publishing $TAG"
-git tag -a "$TAG" -m "Neutrino $VERSION"
+git rev-parse -q --verify "refs/tags/$TAG" >/dev/null || git tag -a "$TAG" -m "Neutrino $VERSION"
 git push -q origin "$TAG"
 gh release create "$TAG" "$DMG" "$ZIP" build/Neutrino.dmg build/Neutrino.zip --repo "$REPO" \
   --title "Neutrino $VERSION" --generate-notes \

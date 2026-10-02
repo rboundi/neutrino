@@ -22,19 +22,29 @@ if [ $# -eq 0 ]; then
 fi
 
 # "file:12" or "file:12:3" opens the file with the caret at that line and column. The position
-# is left in a small file that the app reads when it opens the document.
-if [ $# -eq 1 ] && [ ! -e "$1" ]; then
-  file=$(printf '%s' "$1" | sed -E 's/:[0-9]+(:[0-9]+)?$//')
-  position=${1#"$file"}
-  if [ -n "$position" ] && [ -f "$file" ]; then
-    line=$(printf '%s' "$position" | cut -d: -f2)
-    column=$(printf '%s' "$position" | cut -d: -f3)
-    case "$file" in /*) ;; *) file="$PWD/$file" ;; esac
-    request="$HOME/Library/Caches/$BUNDLE_ID"
-    mkdir -p "$request" && printf '%s\n%s\n%s\n' "$file" "$line" "${column:-1}" > "$request/goto"
-    set -- "$file"
+# is left in a small file that the app reads when it opens the document; it holds one position,
+# so with several such names the first gets its line and the others just open.
+first=1
+asked=0
+for f in "$@"; do
+  if [ "$first" = 1 ]; then set --; first=0; fi
+  if [ ! -e "$f" ]; then
+    file=$(printf '%s' "$f" | sed -E 's/:[0-9]+(:[0-9]+)?$//')
+    position=${f#"$file"}
+    if [ -n "$position" ] && [ -f "$file" ]; then
+      if [ "$asked" = 0 ]; then
+        asked=1
+        line=$(printf '%s' "$position" | cut -d: -f2)
+        column=$(printf '%s' "$position" | cut -d: -f3)
+        case "$file" in /*) path="$file" ;; *) path="$PWD/$file" ;; esac
+        request="$HOME/Library/Caches/$BUNDLE_ID"
+        mkdir -p "$request" && printf '%s\n%s\n%s\n' "$path" "$line" "${column:-1}" > "$request/goto"
+      fi
+      f="$file"
+    fi
   fi
-fi
+  set -- "$@" "$f"
+done
 
 for f in "$@"; do
   if [ -d "$f" ]; then

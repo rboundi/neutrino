@@ -133,3 +133,70 @@ final class EditingToolsTests: XCTestCase {
         XCTAssertEqual(folded(3), [])
     }
 }
+
+final class ReviewFixTests: XCTestCase {
+    func testReplacementWithOddDigitsDoesNotCrash() throws {
+        let query = try SearchQuery(pattern: "(a)", options: SearchOptions(regex: true))
+        let text = "a" as NSString
+        XCTAssertEqual(query.replaceAll(in: text, with: Replacement(template: "\\5\u{FE0F}\u{20E3}", isRegex: true))?.text, "5\u{FE0F}\u{20E3}")
+        XCTAssertEqual(query.replaceAll(in: text, with: Replacement(template: "[\\1]", isRegex: true))?.text, "[a]")
+    }
+
+    func testMatchAtUsesContextAroundTheSelection() throws {
+        let text = NSMutableString(string: String(repeating: "x", count: 30_000) + "foo bar" + String(repeating: "y", count: 30_000))
+        let query = try SearchQuery(pattern: "(?<=o )(b)ar(?=y)", options: SearchOptions(regex: true))
+        let match = query.match(at: NSRange(location: 30_004, length: 3), in: text)
+        XCTAssertEqual(match?.range, NSRange(location: 30_004, length: 3))
+        XCTAssertEqual(match?.range(at: 1), NSRange(location: 30_004, length: 1))
+        XCTAssertNil(query.match(at: NSRange(location: 30_000, length: 3), in: text))
+    }
+
+    func testReplaceAllStreamsAndCancels() throws {
+        let query = try SearchQuery(pattern: "\\d+", options: SearchOptions(regex: true))
+        let result = query.replaceAll(in: "a 1 b 22 c", with: Replacement(template: "<$0>", isRegex: true))
+        XCTAssertEqual(result?.text, "<1> b <22>")
+        XCTAssertEqual(result?.range, NSRange(location: 2, length: 6))
+        XCTAssertEqual(result?.count, 2)
+        XCTAssertNil(query.replaceAll(in: "none", with: Replacement(template: "", isRegex: true)))
+        let long = String(repeating: "1 ", count: 5000) as NSString
+        XCTAssertNil(query.replaceAll(in: long, with: Replacement(template: "", isRegex: true), isCancelled: { true }))
+    }
+
+    func testBackreferencesSurviveJoiningRules() throws {
+        XCTAssertEqual(CompiledSyntax.renumbered("([\"'])x\\1 \\\\1 \\d \\0", by: 3), "([\"'])x\\4 \\\\1 \\d \\0")
+        let definition = SyntaxDefinition(
+            id: "t", name: "T", version: 1, extensions: [], rules: [
+                SyntaxRule(scope: "keyword", words: ["let"]),
+                SyntaxRule(scope: "string", match: "([\"'])[^\"']*\\1"),
+            ])
+        let tokens = try CompiledSyntax(definition).tokenize("let a = 'x' + \"y'" as NSString)
+        XCTAssertEqual(tokens.map(\.scope), [.keyword, .string])
+        XCTAssertEqual(tokens.last?.range, NSRange(location: 8, length: 3))
+    }
+
+    func testEditInOneLongLineRestartsNearby() throws {
+        let definition = SyntaxDefinition(
+            id: "t", name: "T", version: 1, extensions: [], rules: [SyntaxRule(scope: "number", match: "\\d+")])
+        let syntax = try CompiledSyntax(definition)
+        let text = NSMutableString(string: String(repeating: "ab 12 ", count: 10_000))
+        var tokens = syntax.tokenize(text)
+        text.insert("7", at: 50_000)
+        let edited = NSRange(location: 50_000, length: 1)
+        CompiledSyntax.shift(&tokens, edited: edited, delta: 1)
+        XCTAssertEqual(syntax.retokenize(text, previous: tokens, edited: edited), syntax.tokenize(text))
+    }
+
+    func testIDs() {
+        XCTAssertTrue(SyntaxInfo.isValidID("c#"))
+        XCTAssertFalse(SyntaxInfo.isValidID("abc\n"))
+    }
+
+    func testRememberedFoldsMustFit() {
+        let text = "a {\n  b\n}\nlist:\n  - x\nend" as NSString
+        XCTAssertTrue(Folding.fits(NSRange(location: 3, length: 5), in: text))
+        XCTAssertTrue(Folding.fits(NSRange(location: 15, length: 6), in: text))
+        XCTAssertFalse(Folding.fits(NSRange(location: 4, length: 5), in: text))
+        XCTAssertFalse(Folding.fits(NSRange(location: 3, length: 500), in: text))
+        XCTAssertFalse(Folding.fits(NSRange(location: 0, length: 3), in: text))
+    }
+}

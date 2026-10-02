@@ -7,7 +7,8 @@ final class OpenQuickly: NSObject, NSSearchFieldDelegate, NSTableViewDataSource,
     private struct Item {
         var name: String
         var detail: String
-        var document: NSDocument?
+        /// Weak, so the list doesn't keep a document open after its tab is closed.
+        weak var document: NSDocument?
         var url: URL?
     }
 

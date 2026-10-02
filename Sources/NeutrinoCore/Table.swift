@@ -224,6 +224,18 @@ public enum Folding {
         return NSRange(location: last + 1, length: end - last - 1)
     }
 
+    /// Whether a fold remembered from an earlier session still fits the text: it starts after
+    /// an opening bracket and ends at a closing one, or it starts at the end of a line.
+    public static func fits(_ range: NSRange, in string: NSString) -> Bool {
+        guard range.location > 0, range.length > 0, NSMaxRange(range) <= string.length else { return false }
+        if isOpener(string.character(at: range.location - 1)) {
+            return NSMaxRange(range) < string.length && isCloser(string.character(at: NSMaxRange(range)))
+        }
+        var index = range.location
+        while index < NSMaxRange(range), [0x20, 0x09].contains(string.character(at: index)) { index += 1 }
+        return index < NSMaxRange(range) && string.character(at: index) == 0x0A
+    }
+
     /// Every block to hide when the text is folded down to `level`: 1 folds the outermost
     /// blocks, 2 the blocks inside those, and so on.
     public static func ranges(

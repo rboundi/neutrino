@@ -25,11 +25,20 @@ fi
 
 ARCH_FLAGS=(--arch arm64 --arch x86_64)
 echo "==> Compiling"
-if ! swift build -c release "${ARCH_FLAGS[@]}" 2>/dev/null; then
-  echo "    universal build unavailable, building for this Mac only"
+LOG="$(mktemp)"
+if ! swift build -c release "${ARCH_FLAGS[@]}" 2>"$LOG"; then
+  # A release has to run on both kinds of Mac, so there it is an error.
+  if [[ "$MODE" == "--release" ]]; then
+    cat "$LOG" >&2
+    echo "error: the universal build failed" >&2
+    exit 1
+  fi
+  echo "    universal build unavailable, building for this Mac only:"
+  tail -3 "$LOG" | sed 's/^/      /'
   ARCH_FLAGS=()
   swift build -c release
 fi
+rm -f "$LOG"
 BIN_DIR="$(swift build -c release ${ARCH_FLAGS[@]+"${ARCH_FLAGS[@]}"} --show-bin-path)"
 
 echo "==> Assembling $APP"
@@ -59,7 +68,12 @@ else
 fi
 codesign --verify --strict "$APP"
 
-echo "==> Done: $APP v$VERSION ($(du -sh "$APP" | cut -f1), $(lipo -archs "$APP/Contents/MacOS/Neutrino"))"
+ARCHS="$(lipo -archs "$APP/Contents/MacOS/Neutrino")"
+echo "==> Done: $APP v$VERSION ($(du -sh "$APP" | cut -f1), $ARCHS)"
+if [[ "$MODE" == "--release" && ( "$ARCHS" != *arm64* || "$ARCHS" != *x86_64* ) ]]; then
+  echo "error: a release needs arm64 and x86_64, this build has: $ARCHS" >&2
+  exit 1
+fi
 
 notarize() {
   echo "==> Notarizing $(basename "$1")"

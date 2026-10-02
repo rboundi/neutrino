@@ -42,7 +42,8 @@ public struct SyntaxInfo: Codable, Identifiable, Equatable {
     }
 
     public static func isValidID(_ id: String) -> Bool {
-        id.range(of: "^[a-z0-9][a-z0-9+#._-]{0,40}$", options: .regularExpression) != nil
+// \z and not $, which also matches in front of a line break at the end.
+        id.range(of: "^[a-z0-9][a-z0-9+#._-]{0,40}\\z", options: .regularExpression) != nil
     }
 }
 
@@ -146,7 +147,7 @@ public final class CompiledSyntax {
             if let scope = Scope(rawValue: rule.scope) {
                 groups.append((nextGroup, scope))
             }
-            parts.append("(\(pattern))")
+            parts.append("(\(Self.renumbered(pattern, by: nextGroup)))")
             nextGroup += 1 + single.numberOfCaptureGroups
         }
         self.definition = definition
@@ -163,6 +164,33 @@ public final class CompiledSyntax {
         } catch {
             throw SyntaxError(message: "The rules don't combine into a valid regular expression.")
         }
+    }
+
+    /// The pattern with every backreference (`\1`) moved up by `offset`, so it still points at
+    /// its own group once the rules are joined into one expression.
+    static func renumbered(_ pattern: String, by offset: Int) -> String {
+        let chars = Array(pattern)
+        var output = ""
+        var i = 0
+        while i < chars.count {
+            guard chars[i] == "\\", i + 1 < chars.count else {
+                output.append(chars[i])
+                i += 1
+                continue
+            }
+            var end = i + 1
+            while end < chars.count, chars[end].isASCII, chars[end].isNumber { end += 1 }
+            if end > i + 1, chars[i + 1] != "0", let number = Int(String(chars[(i + 1)..<end])) {
+                output += "\\\(number + offset)"
+                i = end
+            } else {
+                // An escaped character, which may be a backslash: both go through as they are.
+                output.append(chars[i])
+                output.append(chars[i + 1])
+                i += 2
+            }
+        }
+        return output
     }
 
     /// Tokens in `range`, in order. They never overlap.
@@ -203,6 +231,9 @@ public final class CompiledSyntax {
             while end < NSMaxRange(line), Self.space.characterIsMember(string.character(at: end)) { end += 1 }
             if end < NSMaxRange(line) { break }
         }
+        // In a file that is one very long line, that would be the start of the file at every
+        // key. Go back a little way instead; the full scan after a pause covers the rest.
+        if editStart - restart > Self.longLine { restart = editStart - Self.restartMargin }
         // A token that reaches across that point has to be rescanned from its own start.
         var keep = Self.firstIndex(in: previous, endingAfter: restart)
         if keep < previous.count, previous[keep].range.location < restart {
@@ -225,6 +256,9 @@ public final class CompiledSyntax {
         }
         return tokens
     }
+
+    static let longLine = 20_000
+    static let restartMargin = 2_000
 
     /// Moves tokens to fit the text after an edit, ready for `retokenize`. `newRange` is the
     /// edited range in the text as it is now and `delta` the change in length.
@@ -275,13 +309,21 @@ public final class CompiledSyntax {
         }
     }
 
-    /// Names for the symbol menu, in the order they appear.
-    public func symbols(in string: NSString) -> [Symbol] {
+    /// Names for the symbol menu, in the order they appear: at most `limit` for each pattern,
+    /// and what was found so far when `isCancelled` says to stop.
+    public func symbols(in string: NSString, limit: Int = 5000, isCancelled: () -> Bool = { false }) -> [Symbol] {
         var found: [Symbol] = []
         let whole = NSRange(location: 0, length: string.length)
         for pattern in symbolPatterns {
-            pattern.enumerateMatches(in: string as String, options: [], range: whole) { result, _, _ in
-                guard let result else { return }
+            var count = 0
+            // Progress reports arrive during a slow match too, so one bad pattern can't run forever.
+            pattern.enumerateMatches(in: string as String, options: [.reportProgress], range: whole) { result, _, stop in
+                guard let result else {
+                    if isCancelled() { stop.pointee = true }
+                    return
+                }
+                count += 1
+                if count >= limit { stop.pointee = true }
                 var range = result.range
                 if result.numberOfRanges > 1, result.range(at: 1).location != NSNotFound { range = result.range(at: 1) }
                 let name = string.substring(with: range).trimmingCharacters(in: .whitespaces)

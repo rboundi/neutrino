@@ -343,7 +343,8 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSText
     /// Folds what was folded when the file was last closed.
     private func restoreFolds() {
         guard folds.isEmpty, let url = doc?.fileURL else { return }
-        let saved = Prefs.folds(for: url, textLength: text.length).sorted { $0.location < $1.location }
+let saved = Prefs.folds(for: url, textLength: text.length).filter { Folding.fits($0, in: text) }
+            .sorted { $0.location < $1.location }
         if !saved.isEmpty { setFolds(saved, changed: saved) }
     }
 
@@ -1248,9 +1249,10 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSText
         guard let button = window?.standardWindowButton(.documentVersionsButton) else { return }
         let hide = doc?.fileURL == nil
         button.isHidden = hide
-        // The dash between the title and "Edited" is a label of its own beside the button. It
-        // comes back only while the button has something to say.
-        for case let label as NSTextField in button.superview?.subviews ?? [] where label.stringValue == "—" {
+// The dash between the title and "Edited" is a label of its own beside the button: the
+        // one label there that isn't the title. It comes back only while the button has
+        // something to say.
+        for case let label as NSTextField in button.superview?.subviews ?? [] where label.stringValue != window?.title {
             label.isHidden = hide || button.title.isEmpty
         }
     }

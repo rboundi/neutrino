@@ -93,7 +93,9 @@ final class PackageFolder<Info: Codable & Identifiable> where Info.ID == String 
     }
 
     private func remote(_ file: String) -> URL {
-        URL(string: "https://raw.githubusercontent.com/\(Self.repo)/main/\(name)/\(file)")!
+// Encoded, so a "#" in an id isn't read as the start of a fragment.
+        let encoded = file.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? file
+        return URL(string: "https://raw.githubusercontent.com/\(Self.repo)/main/\(name)/\(encoded)")!
     }
 
     private func fetch(_ url: URL, completion: @escaping (Result<Data, Error>) -> Void) {

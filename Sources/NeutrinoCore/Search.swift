@@ -68,15 +68,24 @@ public struct SearchQuery {
         matches(in: string, range: range, isCancelled: isCancelled).map(\.range)
     }
 
+    /// How much text around a selected match is looked at, for lookbehind and lookahead.
+    static let matchContext = 10_000
+
     /// The match covering exactly `range`, if there is one. Used to replace the selected match.
     public func match(at range: NSRange, in string: NSString) -> NSTextCheckingResult? {
-        let rest = NSRange(location: range.location, length: string.length - range.location)
+        guard range.location >= 0, NSMaxRange(range) <= string.length else { return nil }
+        // Only the text near the match is handed to the regex: the whole of a mutable text
+        // would be copied first, on every Replace.
+        let start = max(range.location - Self.matchContext, 0)
+        let end = min(NSMaxRange(range) + Self.matchContext, string.length)
+        let window = string.substring(with: NSRange(location: start, length: end - start))
+        let rest = NSRange(location: range.location - start, length: end - range.location)
         var options = Self.matching
         options.insert(.anchored)
-        guard let result = regex.firstMatch(in: string as String, options: options, range: rest),
-            result.range == range
+        guard let result = regex.firstMatch(in: window, options: options, range: rest),
+            result.range == NSRange(location: range.location - start, length: range.length)
         else { return nil }
-        return result
+        return result.adjustingRanges(offset: start)
     }
 }
 
@@ -191,7 +200,8 @@ public struct Replacement {
                 case "E": flush(); pieces.append(.endCase)
                 case "u": flush(); pieces.append(.nextUpper)
                 case "l": flush(); pieces.append(.nextLower)
-                case "0"..."9": flush(); pieces.append(.group(Int(String(n))!))
+                // A keycap emoji or an accented digit also sorts between "0" and "9".
+                case "0"..."9" where n.isASCII: flush(); pieces.append(.group(n.wholeNumberValue ?? 0))
                 default: literal.append(n)
                 }
             } else if c == "$", i + 1 < chars.count {
@@ -231,17 +241,35 @@ public struct ReplaceAllResult {
 
 extension SearchQuery {
     /// Works out a replace-all as one edit, so it is one undo step however many matches there are.
-    public func replaceAll(in string: NSString, range: NSRange? = nil, with replacement: Replacement) -> ReplaceAllResult? {
-        let found = matches(in: string, range: range)
-        guard let first = found.first, let last = found.last else { return nil }
+    /// Nil when nothing matches, and when `isCancelled` says to stop.
+    public func replaceAll(
+        in string: NSString, range: NSRange? = nil, with replacement: Replacement, isCancelled: () -> Bool = { false }
+    ) -> ReplaceAllResult? {
         let output = NSMutableString()
-        var cursor = first.range.location
-        for match in found {
+        var first: Int?
+        var cursor = 0
+        var count = 0
+        var cancelled = false
+        var options = Self.matching
+        options.insert(.reportProgress)
+        let range = range ?? NSRange(location: 0, length: string.length)
+        // Built as the matches arrive, so millions of them aren't all held at once.
+        regex.enumerateMatches(in: string as String, options: options, range: range) { match, _, stop in
+            guard let match else {
+                if isCancelled() { cancelled = true; stop.pointee = true }
+                return
+            }
+            if first == nil {
+                first = match.range.location
+                cursor = match.range.location
+            }
             output.append(string.substring(with: NSRange(location: cursor, length: match.range.location - cursor)))
             output.append(replacement.expand(match, in: string))
             cursor = NSMaxRange(match.range)
+            count += 1
+            if count % 2048 == 0, isCancelled() { cancelled = true; stop.pointee = true }
         }
-        let range = NSRange(location: first.range.location, length: NSMaxRange(last.range) - first.range.location)
-        return ReplaceAllResult(range: range, text: output as String, count: found.count)
+        guard let first, !cancelled else { return nil }
+        return ReplaceAllResult(range: NSRange(location: first, length: cursor - first), text: output as String, count: count)
     }
 }

@@ -205,7 +205,10 @@ extension EditorWindowController {
     func symbols() -> [Symbol] {
         guard let doc, let syntax = doc.syntax else { return [] }
         // A copy, made once: each pattern would otherwise copy the text for itself.
-        return syntax.symbols(in: doc.snapshotText()).filter { symbol in
+        // A pattern from a hand-written syntax file could be very slow; the menu opens with
+        // what was found in a second.
+        let deadline = Date().addingTimeInterval(1)
+        return syntax.symbols(in: doc.snapshotText(), isCancelled: { Date() > deadline }).filter { symbol in
             let found = Self.firstIndex(in: tokens, endingAfter: symbol.range.location) { $0.range }
             guard found < tokens.count, tokens[found].range.location <= symbol.range.location else { return true }
             switch tokens[found].scope {
