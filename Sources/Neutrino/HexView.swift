@@ -43,6 +43,15 @@ final class HexView: NSView {
         rows.needsDisplay = true
     }
 
+    /// Scrolls to the row with this byte and marks the byte. False when there is no such byte.
+    func go(to offset: Int) -> Bool {
+        guard offset >= 0, offset < rows.data.count else { return false }
+        rows.marked = offset
+        rows.scrollToVisible(rows.rect(ofRowWith: offset).insetBy(dx: 0, dy: -60))
+        rows.needsDisplay = true
+        return true
+    }
+
     /// The same size as the text would have.
     func setFontSize(_ size: Double) {
         rows.font = .monospacedSystemFont(ofSize: CGFloat(size), weight: .regular)
@@ -56,6 +65,12 @@ private final class HexRows: NSView {
     }
 
     private static let perRow = 16
+    /// The byte Go to Offset went to, drawn on a coloured ground.
+    var marked: Int?
+
+    func rect(ofRowWith offset: Int) -> NSRect {
+        NSRect(x: 0, y: 10 + CGFloat(offset / Self.perRow) * rowHeight, width: bounds.width, height: rowHeight)
+    }
     private static let digits = Array("0123456789abcdef".utf16)
 
     override var isFlipped: Bool { true }
@@ -100,6 +115,13 @@ private final class HexRows: NSView {
             let width = 3 * Self.perRow + 2
             while hex.count < width { hex.append(0x20) }
             let y = 10 + CGFloat(row) * height
+            if let marked, marked / Self.perRow == row {
+                let column = marked % Self.perRow
+                let character = offsetWidth / 10
+                Theme.findMatch.setFill()
+                NSRect(x: 10 + offsetWidth + CGFloat(column * 3 + (column > 7 ? 1 : 0)) * character - 1, y: y,
+                       width: character * 2 + 2, height: height).fill()
+            }
             (String(format: "%08x", start) as NSString).draw(at: NSPoint(x: 10, y: y), withAttributes: faint)
             let line = String(utf16CodeUnits: hex, count: hex.count) + String(utf16CodeUnits: characters, count: characters.count)
             (line as NSString).draw(at: NSPoint(x: 10 + offsetWidth, y: y), withAttributes: text)

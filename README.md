@@ -20,18 +20,20 @@
 - <kbd>⌃</kbd><kbd>⌥</kbd><kbd>←</kbd> / <kbd>⌃</kbd><kbd>⌥</kbd><kbd>→</kbd> move by the parts of a name such as `camelCase`
 - Spaces or tabs, any tab width; change it for one document from the status bar
 - Uses the indentation a file already has
-- Matching bracket highlight, <kbd>⇧</kbd><kbd>⌘</kbd><kbd>M</kbd> to jump to it
+- Matching bracket highlight, <kbd>⇧</kbd><kbd>⌘</kbd><kbd>M</kbd> to jump to it, or from a tag to the one that closes it
 - Other occurrences of the selected word are marked
 - Word completion from the document (<kbd>⌥</kbd><kbd>Esc</kbd>)
 - Folding: collapse a block in JSON, HTML or any indented text from the gutter or with <kbd>⌥</kbd><kbd>⌘</kbd><kbd>←</kbd>; Fold All, or down to level 2 or 3. A reopened file is folded as it was
-- CSV and TSV files as a table (<kbd>⌥</kbd><kbd>⌘</kbd><kbd>T</kbd>): sort by a column, filter the rows, copy them as Markdown or JSON, double-click a row to go to it in the text
-- Lines changed since the file was opened or saved are marked beside their number
-- Snippets: type an abbreviation and press <kbd>Tab</kbd>. They are kept in one text file (**Edit → Insert → Edit Snippets…**)
+- CSV and TSV files as a table (<kbd>⌥</kbd><kbd>⌘</kbd><kbd>T</kbd>): sort by a column, filter the rows, add up a column, copy rows as Markdown or JSON, double-click a row to go to it in the text
+- Lines changed since the file was opened or saved are marked beside their number; Next Change and Previous Change jump between them
+- Snippets: type an abbreviation and press <kbd>Tab</kbd>, and <kbd>Tab</kbd> again to go to the next place to fill in. They are kept in one text file (**Edit → Insert → Edit Snippets…**)
+- Paste from History: the last ten things copied or cut in Neutrino
+- Closing Tag (<kbd>⌥</kbd><kbd>⌘</kbd><kbd>.</kbd>) types the end tag for the open HTML or XML tag
 - In a JSON file the status bar shows where the caret is, such as `items[3].name`
 - Split editor: two views of the same document, with a divider you can drag (<kbd>⌘</kbd><kbd>\</kbd>)
 - Optional scrolling past the end, page guide, indent guides, marks on trailing spaces, hex colours underlined in their colour, spell checking
 - Read-only lock in the status bar; a file that can't be written opens locked
-- In Markdown, Return continues a list, and <kbd>⌘</kbd><kbd>B</kbd> / <kbd>⌘</kbd><kbd>I</kbd> make the selection bold or italic
+- In Markdown, Return continues a list; <kbd>⌘</kbd><kbd>B</kbd>, <kbd>⌘</kbd><kbd>I</kbd> and <kbd>⌘</kbd><kbd>K</kbd> make the selection bold, italic or a link; Toggle Checkbox; Format Table lines up the pipes
 - Text size buttons in the status bar; click the line and column to count lines, words and characters and to see the Unicode name of the character at the caret. With numbers selected, the click shows their sum and average
 
 **Cursors and lines**
@@ -45,6 +47,8 @@
 - Shift left and right, comment and uncomment, change case
 - Filter the selection through a shell command such as `sort -u` or `jq .` (<kbd>⌥</kbd><kbd>⌘</kbd><kbd>R</kbd>)
 - Transform: pretty-print or minify JSON, Base64 and URL encode and decode, JSON string escapes, HTML entities, indentation to spaces or tabs, Zap Gremlins (invisible characters), Straighten Quotes, SHA-256
+- Change Name Style (<kbd>⌃</kbd><kbd>⇧</kbd><kbd>C</kbd>): `camelCase`, `snake_case`, `kebab-case`, `CONSTANT_CASE`
+- Sort JSON Keys, Unix timestamp to date and back, hex to decimal and back
 - Evaluate Expression (<kbd>⌃</kbd><kbd>=</kbd>) replaces `1024*8+12` with its result
 - Insert the date, the date and time, or a UUID
 
@@ -74,8 +78,9 @@
 - Encoding, byte order mark and line endings are preserved; change them from the status bar
 - Live reload when a file changes on disk; with the caret on the last line it follows the end, like `tail -f`
 - Printing keeps the syntax colours
-- A file that isn't text is shown as hex
-- Compare with Saved shows a diff against the file on disk; Compare with Tab and Compare with Clipboard against another open document or the clipboard
+- A file that isn't text is shown as hex; <kbd>⌘</kbd><kbd>L</kbd> goes to an offset
+- When another app changes a file that has unsaved edits here, a bar offers Compare, Reload or Keep Mine
+- Compare with Saved shows a diff against the file on disk; Compare with Tab, with Clipboard and with Git HEAD against another open document, the clipboard or the last commit
 - New from Clipboard, Reveal in Finder, Copy Path, Open Terminal Here
 - Save All, Duplicate, Rename, Move To, Close Other Tabs, Close Tabs to the Right
 - Two tabs with the same file name show their folders
@@ -160,11 +165,14 @@ This installs the app to `/Applications` and links the `neutrino` command into `
 | Rewrap paragraph | <kbd>⌃</kbd><kbd>Q</kbd> |
 | New from Clipboard | <kbd>⇧</kbd><kbd>⌘</kbd><kbd>N</kbd> |
 | Reveal in Finder / Copy Path | <kbd>⇧</kbd><kbd>⌘</kbd><kbd>R</kbd> / <kbd>⌃</kbd><kbd>⌘</kbd><kbd>C</kbd> |
-| Bold / italic in Markdown | <kbd>⌘</kbd><kbd>B</kbd> / <kbd>⌘</kbd><kbd>I</kbd> |
+| Bold / italic / link in Markdown | <kbd>⌘</kbd><kbd>B</kbd> / <kbd>⌘</kbd><kbd>I</kbd> / <kbd>⌘</kbd><kbd>K</kbd> |
 | Split editor | <kbd>⌘</kbd><kbd>\</kbd> |
 | Fold / unfold | <kbd>⌥</kbd><kbd>⌘</kbd><kbd>←</kbd> / <kbd>⌥</kbd><kbd>⌘</kbd><kbd>→</kbd> |
 | Fold all / unfold all | <kbd>⌥</kbd><kbd>⇧</kbd><kbd>⌘</kbd><kbd>←</kbd> / <kbd>⌥</kbd><kbd>⇧</kbd><kbd>⌘</kbd><kbd>→</kbd> |
 | Evaluate expression | <kbd>⌃</kbd><kbd>=</kbd> |
+| Change name style | <kbd>⌃</kbd><kbd>⇧</kbd><kbd>C</kbd> |
+| Next / previous change | <kbd>⌥</kbd><kbd>⇧</kbd><kbd>⌘</kbd><kbd>↓</kbd> / <kbd>⌥</kbd><kbd>⇧</kbd><kbd>⌘</kbd><kbd>↑</kbd> |
+| Closing tag | <kbd>⌥</kbd><kbd>⌘</kbd><kbd>.</kbd> |
 | Show as table | <kbd>⌥</kbd><kbd>⌘</kbd><kbd>T</kbd> |
 | Preview in MDReader | <kbd>⌥</kbd><kbd>⌘</kbd><kbd>P</kbd> |
 | Reopen closed tab | <kbd>⇧</kbd><kbd>⌘</kbd><kbd>T</kbd> |
@@ -190,7 +198,7 @@ Sources/NeutrinoCore/           No UI, covered by tests
   TextTools.swift               Indentation detection, word count, JSON, Base64 and URL transforms
   Table.swift                   Reading CSV, and which lines a fold hides
   ChangedLines.swift            Which lines differ from the saved text
-  EditingTools.swift            JSON path, snippets, arithmetic
+  EditingTools.swift            JSON path, snippets, arithmetic, name styles, tags, Markdown tables
 Sources/Neutrino/
   main.swift, AppDelegate.swift App entry, launch and quit
   MainMenu.swift                Menu bar
@@ -204,7 +212,7 @@ Sources/Neutrino/
   OpenQuickly.swift             Panel for jumping to a tab or a recent file
   DelimitedTableView.swift      A CSV file shown as a table
   HexView.swift                 A binary file shown as hex
-  SnippetStore.swift            The snippets file
+  SnippetStore.swift            The snippets file, and the copies for Paste from History
   StatusBar.swift               Status bar and its menus
   PackageFolder.swift           Installing and removing downloaded files
   SyntaxStore.swift             Loading and unloading syntaxes

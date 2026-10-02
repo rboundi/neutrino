@@ -33,6 +33,10 @@ final class EditorTextView: NSTextView {
 
     /// Positions of the bracket next to the caret and its partner.
     private var bracketPair: (Int, Int)?
+    /// The places of a snippet that Tab has yet to visit, and where the snippet starts and ends.
+    private var snippetStops: [NSRange] = []
+    private var snippetStart = 0
+    private var snippetEnd = 0
     /// Tells brackets in code from those in strings and comments. Set by the window controller.
     var isCode: (Int) -> Bool = { _ in true }
 
@@ -147,6 +151,11 @@ final class EditorTextView: NSTextView {
         if selection.length > 0, text.substring(with: selection).contains("\n") {
             return shiftRight(sender)
         }
+        if cursors.isEmpty, !snippetStops.isEmpty {
+            let next = snippetStops.removeFirst()
+            setSelectedRange(next)
+            return scrollRangeToVisible(next)
+        }
         if selection.length == 0, expandSnippet(at: selection.location) { return }
         guard usesSpaces else { return super.insertTab(sender) }
         let line = text.lineRange(for: NSRange(location: selection.location, length: 0))
@@ -171,8 +180,38 @@ final class EditorTextView: NSTextView {
         let indent = text.substring(with: NSRange(location: line.location, length: end - line.location))
         let expanded = Snippets.expand(body, indent: indent, unit: indentUnit)
         replace(word, with: expanded.text)
-        setSelectedRange(NSRange(location: start + expanded.caret, length: 0))
+        var stops = expanded.stops.map { NSRange(location: start + $0.location, length: $0.length) }
+        let first = stops.isEmpty
+            ? NSRange(location: start + (expanded.text as NSString).length, length: 0) : stops.removeFirst()
+        setSelectedRange(first)
+        // Not with several cursors: the places would be those of the last snippet only.
+        snippetStops = cursors.isEmpty ? stops : []
+        snippetStart = start
+        snippetEnd = start + (expanded.text as NSString).length
         return true
+    }
+
+    /// Keeps the snippet's places where they belong as the text around them changes.
+    func textEdited(newRange: NSRange, delta: Int) {
+        guard !snippetStops.isEmpty else { return }
+        let oldEnd = newRange.location + newRange.length - delta
+        for i in snippetStops.indices {
+            if snippetStops[i].location >= oldEnd {
+                snippetStops[i].location += delta
+            } else if NSMaxRange(snippetStops[i]) > newRange.location {
+                // The edit ran into it: what is left is a bare place.
+                snippetStops[i] = NSRange(location: min(snippetStops[i].location, newRange.location), length: 0)
+            }
+        }
+        if snippetStart >= oldEnd { snippetStart += delta }
+        if snippetEnd >= oldEnd { snippetEnd += delta }
+    }
+
+    /// Tab goes back to its usual work once the caret has left the snippet.
+    func leaveSnippetIfOutside() {
+guard !snippetStops.isEmpty else { return }
+        let caret = selectedRange().location
+        if caret < snippetStart || caret > snippetEnd || !cursors.isEmpty { snippetStops = [] }
     }
 
     override func insertBacktab(_ sender: Any?) {
@@ -354,6 +393,7 @@ final class EditorTextView: NSTextView {
 
     /// With nothing selected, Copy takes the whole line.
     override func copy(_ sender: Any?) {
+        defer { ClipboardHistory.noteCopy() }
         guard selectedRange().length == 0, cursors.isEmpty, text.length > 0 else { return super.copy(sender) }
         let line = text.lineRange(for: selectedRange())
         NSPasteboard.general.clearContents()
@@ -362,11 +402,18 @@ final class EditorTextView: NSTextView {
 
     /// With nothing selected, Cut takes the whole line.
     override func cut(_ sender: Any?) {
+        defer { ClipboardHistory.noteCopy() }
         guard selectedRange().length == 0, cursors.isEmpty, text.length > 0, isEditable else { return super.cut(sender) }
         let line = text.lineRange(for: selectedRange())
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(text.substring(with: line), forType: .string)
         replace(line, with: "")
+    }
+
+    /// Pastes the earlier copy the menu item carries.
+    @objc func pasteFromHistory(_ sender: NSMenuItem) {
+        guard let text = sender.representedObject as? String else { return }
+        insertText(text, replacementRange: NSRange(location: NSNotFound, length: 0))
     }
 
     /// Control-Option-arrow moves by a part of a name: `camel|Case`, `snake|_case`. With Shift
@@ -732,7 +779,14 @@ final class EditorTextView: NSTextView {
     }
 
     @objc func goToMatchingBracket(_ sender: Any?) {
-        guard let (_, partner) = bracketPair else { return NSSound.beep() }
+        guard let (_, partner) = bracketPair else {
+            // Not at a bracket: in `<div>` or `</div>` it goes to the other of the two.
+            guard let tag = HTMLTags.partner(in: text, at: selectedRange().location) else { return NSSound.beep() }
+            let caret = NSRange(location: tag.location + 1, length: 0)
+            setSelectedRange(caret)
+            scrollRangeToVisible(tag)
+            return showFindIndicator(for: tag)
+        }
         // Land where the partner is beside the caret, so the command also goes back again.
         let closes = [0x29, 0x5D, 0x7D].contains(text.character(at: partner))
         let caret = NSRange(location: partner + (closes ? 1 : 0), length: 0)
@@ -1032,6 +1086,45 @@ final class EditorTextView: NSTextView {
         transformText { Indentation.convert($0, toSpaces: false, width: width) }
     }
 
+    /// The selection, or else the run of letters, digits and `extra` characters around the caret.
+    private func selectionOrWord(with extra: String) -> NSRange {
+        let selection = selectedRange()
+        guard selection.length == 0 else { return selection }
+        func belongs(_ index: Int) -> Bool {
+            guard let c = character(at: index) else { return false }
+            return c.isLetter || c.isNumber || extra.contains(c)
+        }
+        var start = selection.location
+        var end = selection.location
+        while start > 0, selection.location - start < 200, belongs(start - 1) { start -= 1 }
+        while end < text.length, end - selection.location < 200, belongs(end) { end += 1 }
+        return NSRange(location: start, length: end - start)
+    }
+
+    /// Replaces the selection, or the word at the caret, with what `change` makes of it.
+    private func convertWord(with extra: String, _ change: (String) -> String?) {
+        let range = selectionOrWord(with: extra)
+        guard range.length > 0, let new = change(text.substring(with: range)) else { return NSSound.beep() }
+        replace(range, with: new)
+        setSelectedRange(NSRange(location: range.location, length: (new as NSString).length))
+    }
+
+    /// camelCase, snake_case, kebab-case, CONSTANT_CASE, and round again.
+    @objc func changeNameStyle(_ sender: Any?) { convertWord(with: "_-", NameStyle.next) }
+    @objc func convertTimestamp(_ sender: Any?) { convertWord(with: "-:.+", Convert.timestamp) }
+    @objc func convertHex(_ sender: Any?) { convertWord(with: "", Convert.hex) }
+
+    @objc func sortJSONKeys(_ sender: Any?) {
+        let unit = indentUnit
+        transformText { Convert.sortedJSON($0, indent: unit) }
+    }
+
+    /// Types the closing tag for the innermost tag that is open at the caret.
+    @objc func closeTag(_ sender: Any?) {
+        guard let name = HTMLTags.unclosed(in: text, before: selectedRange().location) else { return NSSound.beep() }
+        type("</\(name)>")
+    }
+
     /// Replaces the selected arithmetic, or the line the caret is on, with its result.
     @objc func evaluateExpression(_ sender: Any?) {
         var range = selectedRange()
@@ -1076,6 +1169,48 @@ final class EditorTextView: NSTextView {
     @objc func markdownBold(_ sender: Any?) { toggleMark("**") }
     @objc func markdownItalic(_ sender: Any?) { toggleMark("*") }
 
+    /// Makes the selection the text of a link and leaves the caret where its address goes.
+    @objc func markdownLink(_ sender: Any?) {
+        let selection = selectedRange()
+        let inner = text.substring(with: selection)
+        replace(selection, with: "[\(inner)]()")
+        // With nothing selected the text comes first; otherwise the address.
+        let caret = selection.location + (selection.length == 0 ? 1 : selection.length + 3)
+        setSelectedRange(NSRange(location: caret, length: 0))
+    }
+
+    /// Ticks or clears the task box on each selected line; a line without one gets a box.
+    @objc func markdownCheckbox(_ sender: Any?) {
+        transformLines { $0.map(MarkdownTable.toggleCheckbox) }
+    }
+
+    /// Lines up the pipes of the table the caret is in.
+    @objc func markdownFormatTable(_ sender: Any?) {
+        func hasPipe(_ range: NSRange) -> Bool { text.range(of: "|", options: .literal, range: range).location != NSNotFound }
+        var block = text.lineRange(for: selectedRange())
+        guard hasPipe(block) else { return NSSound.beep() }
+        while block.location > 0 {
+            let previous = text.lineRange(for: NSRange(location: block.location - 1, length: 0))
+            guard hasPipe(previous) else { break }
+            block = NSUnionRange(previous, block)
+        }
+        while NSMaxRange(block) < text.length {
+            let next = text.lineRange(for: NSRange(location: NSMaxRange(block), length: 0))
+            guard next.length > 0, hasPipe(next) else { break }
+            block = NSUnionRange(block, next)
+        }
+        let caret = selectedRange().location
+        setSelectedRange(block)
+        var formatted = false
+        transformLines { lines in
+            guard let table = MarkdownTable.format(lines) else { return lines }
+            formatted = true
+            return table
+        }
+        if !formatted { NSSound.beep() }
+        setSelectedRange(NSRange(location: min(caret, text.length), length: 0))
+    }
+
     /// Puts `mark` around the selection, or takes it away when it is already there, whether
     /// the marks are inside the selection or just outside it.
     private func toggleMark(_ mark: String) {
@@ -1101,7 +1236,10 @@ final class EditorTextView: NSTextView {
     override func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
         switch menuItem.action {
         case #selector(toggleComment(_:)): return lineComment != nil || blockComment != nil
-        case #selector(markdownBold(_:)), #selector(markdownItalic(_:)): return isMarkdown && isEditable
+        case #selector(markdownBold(_:)), #selector(markdownItalic(_:)), #selector(markdownLink(_:)),
+            #selector(markdownCheckbox(_:)), #selector(markdownFormatTable(_:)):
+            return isMarkdown && isEditable
+        case #selector(pasteFromHistory(_:)): return isEditable
         case #selector(insertNumbers(_:)): return cursors.count > 1
         // With nothing selected these take the line, so they are on whenever there is text.
         case #selector(copy(_:)): return text.length > 0

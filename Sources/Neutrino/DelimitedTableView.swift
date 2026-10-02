@@ -9,6 +9,8 @@ final class DelimitedTableView: NSView, NSTableViewDataSource, NSTableViewDelega
     var onOpen: (Int) -> Void = { _ in }
     /// Called with how many rows are shown and how many there are, when either changes.
     var onCount: (Int, Int) -> Void = { _, _ in }
+    /// Called with something to say in the status bar.
+    var onMessage: (String) -> Void = { _ in }
 
     let table = NSTableView()
     private let filterField = NSSearchField()
@@ -45,7 +47,10 @@ final class DelimitedTableView: NSView, NSTableViewDataSource, NSTableViewDelega
         ] {
             menu.addItem(withTitle: title, action: action, keyEquivalent: "").target = self
         }
+        menu.addItem(.separator())
+        menu.addItem(withTitle: "Totals for This Column", action: #selector(columnTotals(_:)), keyEquivalent: "").target = self
         table.menu = menu
+        table.headerView?.menu = menu
 
         filterField.placeholderString = "Filter rows"
         filterField.controlSize = .small
@@ -225,8 +230,35 @@ final class DelimitedTableView: NSView, NSTableViewDataSource, NSTableViewDelega
         put(DelimitedTable.json(titles: titles, rows: chosenRows))
     }
 
+    /// Adds up the numbers in the column that was clicked: of the selected rows when several
+    /// are selected, otherwise of every row shown.
+    @objc func columnTotals(_ sender: Any?) {
+        guard table.tableColumns.indices.contains(table.clickedColumn),
+            let index = Int(table.tableColumns[table.clickedColumn].identifier.rawValue)
+        else { return NSSound.beep() }
+        let chosen = table.selectedRowIndexes.count > 1 ? Array(table.selectedRowIndexes) : Array(order.indices)
+        var count = 0
+        var sum = 0.0
+        var least = Double.infinity
+        var most = -Double.infinity
+        for row in chosen where order.indices.contains(row) {
+            let fields = rows[order[row]]
+            guard index < fields.count, let value = Double(fields[index].trimmingCharacters(in: .whitespaces)) else { continue }
+            count += 1
+            sum += value
+            least = min(least, value)
+            most = max(most, value)
+        }
+        let title = index < titles.count ? titles[index] : ""
+        guard count > 0 else { return onMessage("\(title): no numbers") }
+        func number(_ value: Double) -> String { value.formatted(.number.precision(.fractionLength(0...4))) }
+        onMessage("\(title): \(count.formatted()) numbers, sum \(number(sum)), average \(number(sum / Double(count))), "
+            + "least \(number(least)), most \(number(most))")
+    }
+
     func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
-        !order.isEmpty
+        if menuItem.action == #selector(columnTotals(_:)) { return table.clickedColumn >= 0 && !order.isEmpty }
+        return !order.isEmpty
     }
 
     @objc private func openRow() {

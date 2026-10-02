@@ -76,6 +76,7 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSText
     private var splitRatio: CGFloat = 0.5
     private var splitHeight: NSLayoutConstraint?
     let findBar = FindBar()
+    private let noticeBar = NoticeBar()
     let resultsView = FindResultsView()
     let statusBar = StatusBar()
     private var style = EditorStyle.current
@@ -216,7 +217,8 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSText
 
         findBar.isHidden = true
         resultsView.isHidden = true
-        let stack = NSStackView(views: [findBar, editorArea, resultsView, statusBar])
+        noticeBar.isHidden = true
+        let stack = NSStackView(views: [noticeBar, findBar, editorArea, resultsView, statusBar])
         stack.orientation = .vertical
         stack.alignment = .leading
         stack.spacing = 0
@@ -462,8 +464,11 @@ let saved = Prefs.folds(for: url, textLength: text.length).filter { Folding.fits
         case #selector(copyJSONPath(_:)): return isJSON
         case #selector(keepMatchingLines(_:)), #selector(deleteMatchingLines(_:)):
             return !findBar.pattern.isEmpty && !isLocked && tableView == nil
-        case #selector(showFind(_:)), #selector(showFindInDocuments(_:)), #selector(goToLine(_:)):
+        case #selector(showFind(_:)), #selector(showFindInDocuments(_:)):
             return hexView == nil
+        case #selector(goToLine(_:)):
+            menuItem.title = hexView == nil ? "Go to Line…" : "Go to Offset…"
+        case #selector(nextChange(_:)), #selector(previousChange(_:)): return !changes.isEmpty
         case #selector(toggleLock(_:)): menuItem.state = isLocked ? .on : .off
         case #selector(goToLastEdit(_:)): return !editPlaces.isEmpty
         case #selector(nextBookmark(_:)), #selector(previousBookmark(_:)), #selector(clearBookmarks(_:)):
@@ -505,7 +510,7 @@ let saved = Prefs.folds(for: url, textLength: text.length).filter { Folding.fits
         pane.textView.blockComment = definition?.blockComment
         pane.textView.indentWithTabs = definition?.indentWithTabs == true
         pane.textView.indentAfterColon = definition?.indentAfterColon == true
-        pane.textView.isMarkdown = definition?.id == "markdown"
+        pane.textView.isMarkdown = document.isMarkdown
     }
 
     private func adoptSyntax(of document: Document) {
@@ -763,6 +768,7 @@ let saved = Prefs.folds(for: url, textLength: text.length).filter { Folding.fits
             editedTail = tail
         }
 
+        for pane in panes { pane.textView.textEdited(newRange: newRange, delta: delta) }
         // Earlier places move with the text; the newest is where this edit ended.
         for i in editPlaces.indices {
             if editPlaces[i] >= oldEnd {
@@ -865,6 +871,46 @@ let saved = Prefs.folds(for: url, textLength: text.length).filter { Folding.fits
         }
     }
 
+    @objc func nextChange(_ sender: Any?) { goToChange(forward: true) }
+    @objc func previousChange(_ sender: Any?) { goToChange(forward: false) }
+
+    /// The first line of the nearest run of changed lines after or before the caret, going
+    /// round at the ends.
+    private func goToChange(forward: Bool) {
+        guard let index = doc?.lineIndex else { return }
+        let marked = changes.changed.union(changes.removed)
+        let starts = marked.filter { !marked.contains($0 - 1) }.sorted()
+        let current = index.line(at: textView.selectedRange().location)
+        let target = forward ? starts.first { $0 > current } ?? starts.first : starts.last { $0 < current } ?? starts.last
+        guard let target else { return NSSound.beep() }
+        go(toLine: target + 1)
+    }
+
+    // MARK: Changed on disk
+
+    /// Says that the file was changed by another app while there are unsaved edits here, and
+    /// offers the ways out. Without edits the file is simply read again.
+    func showConflict() {
+        guard let doc, noticeBar.isHidden else { return }
+        noticeBar.show(
+            "“\(doc.displayName ?? "The file")” was changed by another app, and has unsaved changes here.",
+            buttons: [
+                ("Compare", { [weak self] in self?.doc?.compareWithSaved(nil) }),
+                ("Reload", { [weak self] in
+                    self?.noticeBar.isHidden = true
+                    self?.doc?.reloadFromDisk()
+                }),
+                ("Keep Mine", { [weak self] in
+                    self?.noticeBar.isHidden = true
+                    self?.doc?.keepOverDisk()
+                }),
+            ])
+    }
+
+    func hideConflict() {
+        noticeBar.isHidden = true
+    }
+
     private func setChanges(_ new: ChangedLines) {
         guard new != changes else { return }
         changes = new
@@ -883,6 +929,7 @@ let saved = Prefs.folds(for: url, textLength: text.length).filter { Folding.fits
         statusBar.update()
         updateHexView()
         guard let doc else { return }
+        for pane in panes { pane.textView.isMarkdown = doc.isMarkdown }
         // The document may have picked up an .editorconfig after being saved under a new name.
         let new = doc.style
         if new != style { apply(new) }
@@ -892,6 +939,7 @@ let saved = Prefs.folds(for: url, textLength: text.length).filter { Folding.fits
         let changed = notification.object as? EditorTextView ?? activeView
         changed.updateCurrentLine()
         changed.updateBracketMatch()
+        changed.leaveSnippetIfOutside()
         panes.first { $0.textView === changed }?.gutter.needsDisplay = true
         // A caret that lands inside a fold, from a search or Go to Line, opens it.
         let caret = changed.selectedRange()
@@ -1133,6 +1181,7 @@ let saved = Prefs.folds(for: url, textLength: text.length).filter { Folding.fits
                     if !table.isComplete { label += ", the first 200,000 lines" }
                     self?.statusBar.setPosition(label)
                 }
+                view.onMessage = { [weak self] in self?.statusBar.setPosition($0) }
                 view.show(table)
                 if self.tableView == nil {
                     self.tableView = view
@@ -1327,6 +1376,7 @@ let saved = Prefs.folds(for: url, textLength: text.length).filter { Folding.fits
     // MARK: Go to line
 
     @objc func goToLine(_ sender: Any?) {
+        if hexView != nil { return goToOffset() }
         guard let index = doc?.lineIndex, let window else { return }
         let alert = NSAlert()
         alert.messageText = "Go to Line"
@@ -1342,6 +1392,26 @@ let saved = Prefs.folds(for: url, textLength: text.length).filter { Folding.fits
             let parts = field.stringValue.split(whereSeparator: { !$0.isNumber }).compactMap { Int($0) }
             guard let line = parts.first else { return }
             self.go(toLine: line, column: parts.count > 1 ? parts[1] : 1)
+        }
+    }
+
+    /// Asks for a place in a binary file and scrolls the bytes there.
+    private func goToOffset() {
+        guard let window, let hexView else { return }
+        let alert = NSAlert()
+        alert.messageText = "Go to Offset"
+        alert.informativeText = "A number of bytes from the start, as 4096 or 0x1000."
+        let field = NSTextField(frame: NSRect(x: 0, y: 0, width: 220, height: 22))
+        field.placeholderString = "0x1000"
+        alert.accessoryView = field
+        alert.addButton(withTitle: "Go")
+        alert.addButton(withTitle: "Cancel")
+        alert.window.initialFirstResponder = field
+        alert.beginSheetModal(for: window) { response in
+            guard response == .alertFirstButtonReturn else { return }
+            let entry = field.stringValue.trimmingCharacters(in: .whitespaces).lowercased()
+            let offset = entry.hasPrefix("0x") ? Int(entry.dropFirst(2), radix: 16) : Int(entry)
+            guard let offset, hexView.go(to: offset) else { return NSSound.beep() }
         }
     }
 

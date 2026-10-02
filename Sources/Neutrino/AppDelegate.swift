@@ -177,6 +177,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         if menu === NSApp.windowsMenu { return updateTabItems(in: menu) }
         menu.removeAllItems()
         if menu.identifier == MainMenu.compareMenu { return fillCompareMenu(menu) }
+        if menu.identifier == MainMenu.historyMenu { return fillHistoryMenu(menu) }
         let urls = NSDocumentController.shared.recentDocumentURLs
         for url in urls {
             let item = menu.addItem(withTitle: url.lastPathComponent, action: #selector(openRecent(_:)), keyEquivalent: "")
@@ -187,6 +188,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         if !urls.isEmpty { menu.addItem(.separator()) }
         menu.addItem(
             withTitle: "Clear Menu", action: #selector(NSDocumentController.clearRecentDocuments(_:)), keyEquivalent: "")
+    }
+
+    /// The last things copied or cut here, newest first, each shown by its first line.
+    private func fillHistoryMenu(_ menu: NSMenu) {
+        for entry in ClipboardHistory.entries {
+            let line = entry.trimmingCharacters(in: .whitespacesAndNewlines).prefix(while: { $0 != "\n" })
+            let title = line.count > 60 ? line.prefix(60) + "…" : String(line)
+            let item = menu.addItem(withTitle: title.isEmpty ? "(blank)" : title, action: #selector(EditorTextView.pasteFromHistory(_:)), keyEquivalent: "")
+            item.representedObject = entry
+        }
+        if menu.items.isEmpty {
+            menu.addItem(withTitle: "Nothing Copied Yet", action: nil, keyEquivalent: "").isEnabled = false
+        }
     }
 
     /// Every other open document that is short enough to compare with the one in front.

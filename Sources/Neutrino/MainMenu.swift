@@ -4,6 +4,8 @@ import AppKit
 enum MainMenu {
     /// The menu of other open documents to compare with; the app delegate fills it when it opens.
     static let compareMenu = NSUserInterfaceItemIdentifier("compare")
+    /// The menu of earlier copies to paste; filled the same way.
+    static let historyMenu = NSUserInterfaceItemIdentifier("history")
 
     static func build(delegate: AppDelegate) -> NSMenu {
         let main = NSMenu()
@@ -62,6 +64,7 @@ enum MainMenu {
         let compare = group("Compare", in: file)
         add(compare, "With Saved", #selector(Document.compareWithSaved(_:)))
         add(compare, "With Clipboard", #selector(Document.compareWithClipboard(_:)))
+        add(compare, "With Git HEAD", #selector(Document.compareWithGitHead(_:)))
         let tabs = group("With Tab", in: compare)
         tabs.identifier = compareMenu
         tabs.delegate = delegate
@@ -81,6 +84,9 @@ enum MainMenu {
         add(edit, "Copy", #selector(NSText.copy(_:)), "c")
         add(edit, "Paste", #selector(NSText.paste(_:)), "v")
         add(edit, "Paste and Match Indentation", #selector(EditorTextView.pasteAndIndent(_:)), "v", [.command, .option, .shift])
+        let history = group("Paste from History", in: edit)
+        history.identifier = historyMenu
+        history.delegate = delegate
         add(edit, "Delete", #selector(NSText.delete(_:)))
         add(edit, "Select All", #selector(NSText.selectAll(_:)), "a")
         edit.addItem(.separator())
@@ -137,9 +143,11 @@ enum MainMenu {
         add(transform, "Upper Case", #selector(NSResponder.uppercaseWord(_:)))
         add(transform, "Lower Case", #selector(NSResponder.lowercaseWord(_:)))
         add(transform, "Capitalize", #selector(NSResponder.capitalizeWord(_:)))
+        add(transform, "Change Name Style", #selector(EditorTextView.changeNameStyle(_:)), "c", [.control, .shift])
         transform.addItem(.separator())
         add(transform, "Pretty-Print JSON", #selector(EditorTextView.prettyPrintJSON(_:)))
         add(transform, "Minify JSON", #selector(EditorTextView.minifyJSON(_:)))
+        add(transform, "Sort JSON Keys", #selector(EditorTextView.sortJSONKeys(_:)))
         add(transform, "Escape JSON String", #selector(EditorTextView.jsonEscape(_:)))
         add(transform, "Unescape JSON String", #selector(EditorTextView.jsonUnescape(_:)))
         transform.addItem(.separator())
@@ -149,6 +157,8 @@ enum MainMenu {
         add(transform, "URL Decode", #selector(EditorTextView.urlDecode(_:)))
         add(transform, "Encode HTML Entities", #selector(EditorTextView.htmlEncode(_:)))
         add(transform, "Decode HTML Entities", #selector(EditorTextView.htmlDecode(_:)))
+        add(transform, "Timestamp to Date and Back", #selector(EditorTextView.convertTimestamp(_:)))
+        add(transform, "Hex to Decimal and Back", #selector(EditorTextView.convertHex(_:)))
         transform.addItem(.separator())
         add(transform, "Zap Gremlins", #selector(EditorTextView.zapGremlins(_:)))
         add(transform, "Straighten Quotes", #selector(EditorTextView.straightenQuotes(_:)))
@@ -162,12 +172,16 @@ enum MainMenu {
         add(insert, "Date", #selector(EditorTextView.insertDate(_:)))
         add(insert, "Date and Time", #selector(EditorTextView.insertDateAndTime(_:)))
         add(insert, "UUID", #selector(EditorTextView.insertUUID(_:)))
+        add(insert, "Closing Tag", #selector(EditorTextView.closeTag(_:)), ".", [.command, .option])
         insert.addItem(.separator())
         add(insert, "Edit Snippets…", #selector(AppDelegate.editSnippets(_:)), target: delegate)
 
         let markdown = group("Markdown", in: edit)
         add(markdown, "Bold", #selector(EditorTextView.markdownBold(_:)), "b")
         add(markdown, "Italic", #selector(EditorTextView.markdownItalic(_:)), "i")
+        add(markdown, "Link", #selector(EditorTextView.markdownLink(_:)), "k")
+        add(markdown, "Toggle Checkbox", #selector(EditorTextView.markdownCheckbox(_:)))
+        add(markdown, "Format Table", #selector(EditorTextView.markdownFormatTable(_:)))
 
         edit.addItem(.separator())
         add(edit, "Complete Word", #selector(NSTextView.complete(_:)), "\u{1B}", [.option])
@@ -204,9 +218,11 @@ enum MainMenu {
         let go = submenu("Go", in: main)
         add(go, "Go to Line…", #selector(EditorWindowController.goToLine(_:)), "l")
         add(go, "Go to Symbol…", #selector(EditorWindowController.showSymbols(_:)), "o", [.command, .shift])
-        add(go, "Go to Matching Bracket", #selector(EditorTextView.goToMatchingBracket(_:)), "m", [.command, .shift])
+        add(go, "Go to Matching Bracket or Tag", #selector(EditorTextView.goToMatchingBracket(_:)), "m", [.command, .shift])
         add(go, "Go to Last Edit", #selector(EditorWindowController.goToLastEdit(_:)), "-", [.control])
         add(go, "Open Path or Link at Caret", #selector(EditorWindowController.openPathAtCaret(_:)), "o", [.command, .control])
+        add(go, "Next Change", #selector(EditorWindowController.nextChange(_:)), down, [.command, .option, .shift])
+        add(go, "Previous Change", #selector(EditorWindowController.previousChange(_:)), up, [.command, .option, .shift])
         go.addItem(.separator())
         add(go, "Toggle Bookmark", #selector(EditorWindowController.toggleBookmark(_:)), f2)
         add(go, "Next Bookmark", #selector(EditorWindowController.nextBookmark(_:)), f2, [])

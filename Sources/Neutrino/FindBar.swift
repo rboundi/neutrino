@@ -373,3 +373,63 @@ final class FindResultsView: NSView, NSTableViewDataSource, NSTableViewDelegate 
 
     @objc private func closeList() { onClose() }
 }
+
+/// A strip above the text with a message and a few buttons, for something that needs a decision.
+final class NoticeBar: NSView {
+    private let label = NSTextField(labelWithString: "")
+    private let buttons = NSStackView()
+    private var actions: [() -> Void] = []
+
+    override init(frame: NSRect) {
+        super.init(frame: frame)
+        label.font = .systemFont(ofSize: NSFont.smallSystemFontSize)
+        label.lineBreakMode = .byTruncatingTail
+        label.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        buttons.orientation = .horizontal
+        buttons.spacing = 6
+        let row = NSStackView(views: [label, NSView(), buttons])
+        row.orientation = .horizontal
+        row.edgeInsets = NSEdgeInsets(top: 5, left: 10, bottom: 5, right: 10)
+        row.translatesAutoresizingMaskIntoConstraints = false
+        let line = NSBox()
+        line.boxType = .separator
+        line.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(row)
+        addSubview(line)
+        NSLayoutConstraint.activate([
+            row.leadingAnchor.constraint(equalTo: leadingAnchor),
+            row.trailingAnchor.constraint(equalTo: trailingAnchor),
+            row.topAnchor.constraint(equalTo: topAnchor),
+            row.bottomAnchor.constraint(equalTo: bottomAnchor),
+            line.leadingAnchor.constraint(equalTo: leadingAnchor),
+            line.trailingAnchor.constraint(equalTo: trailingAnchor),
+            line.bottomAnchor.constraint(equalTo: bottomAnchor),
+        ])
+    }
+
+    required init?(coder: NSCoder) { fatalError() }
+
+    override func draw(_ dirtyRect: NSRect) {
+        NSColor.systemYellow.withAlphaComponent(0.18).setFill()
+        bounds.fill()
+    }
+
+    func show(_ message: String, buttons titles: [(String, () -> Void)]) {
+        label.stringValue = message
+        actions = titles.map(\.1)
+        buttons.arrangedSubviews.forEach { $0.removeFromSuperview() }
+        for (index, entry) in titles.enumerated() {
+            let button = NSButton(title: entry.0, target: self, action: #selector(pressed(_:)))
+            button.bezelStyle = .rounded
+            button.controlSize = .small
+            button.font = .systemFont(ofSize: NSFont.smallSystemFontSize)
+            button.tag = index
+            buttons.addArrangedSubview(button)
+        }
+        isHidden = false
+    }
+
+    @objc private func pressed(_ sender: NSButton) {
+        if actions.indices.contains(sender.tag) { actions[sender.tag]() }
+    }
+}

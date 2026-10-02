@@ -113,10 +113,9 @@ final class Document: NSDocument, NSTextStorageDelegate {
             detectSyntax()
             editor?.updateTitleButton()
             let config = fileURL.map { EditorConfig.load(for: $0) } ?? EditorConfig()
-            if config != editorConfig {
-                editorConfig = config
-                NotificationCenter.default.post(name: Self.formatDidChange, object: self)
-            }
+            editorConfig = config
+            // Also when the settings are the same: a new name can make it a Markdown file.
+            NotificationCenter.default.post(name: Self.formatDidChange, object: self)
         }
     }
 
@@ -320,6 +319,7 @@ final class Document: NSDocument, NSTextStorageDelegate {
 
     override func revert(toContentsOf url: URL, ofType typeName: String) throws {
         try super.revert(toContentsOf: url, ofType: typeName)
+        editor?.hideConflict()
         // The undo steps describe the old text; applying them to the new text would corrupt it.
         undoManager?.removeAllActions()
     }
@@ -329,12 +329,40 @@ final class Document: NSDocument, NSTextStorageDelegate {
         DispatchQueue.main.async { self.reloadIfChangedOnDisk() }
     }
 
-    /// Picks up edits made by another app, as long as there is nothing unsaved here to lose.
-    private func reloadIfChangedOnDisk() {
-        guard let url = fileURL, let type = fileType, !isDocumentEdited,
+    /// The file's modification date, when it is newer than the one this document was read or
+    /// saved with: another app has written it since.
+    private var newerDateOnDisk: Date? {
+        guard let url = fileURL,
             let onDisk = try? url.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate,
             let known = fileModificationDate, onDisk > known
-        else { return }
+        else { return nil }
+        return onDisk
+    }
+
+    /// Reads the file again and drops the unsaved changes; from the conflict notice.
+    func reloadFromDisk() {
+        guard let url = fileURL, let type = fileType else { return }
+        do {
+            try revert(toContentsOf: url, ofType: type)
+        } catch {
+            presentError(error)
+        }
+    }
+
+    /// Keeps the text here over what another app wrote: the next save replaces the file
+    /// without asking.
+    func keepOverDisk() {
+        if let date = newerDateOnDisk { fileModificationDate = date }
+    }
+
+    /// Picks up edits made by another app, as long as there is nothing unsaved here to lose.
+    /// When there is, it says so and leaves the choice to the user.
+    private func reloadIfChangedOnDisk() {
+        guard let url = fileURL, let type = fileType, newerDateOnDisk != nil else { return }
+        guard !isDocumentEdited else {
+            editor?.showConflict()
+            return
+        }
         // With the caret on the last line, stay at the end as the file grows, like `tail -f`.
         let caret = editor?.textView.selectedRange().location ?? 0
         let follows = textStorage.length > 0 && lineIndex.line(at: caret) == lineIndex.count - 1
@@ -409,6 +437,50 @@ final class Document: NSDocument, NSTextStorageDelegate {
         compare(
             old: saved, named: "\(name) (saved)", new: textStorage.string, named: "\(name) (now)",
             title: "Changes in \(name)", same: "The text is the same as the saved file.")
+    }
+
+    /// The folder of the Git repository the file is in, found by its `.git`.
+    private var gitRoot: URL? {
+        guard var folder = fileURL?.deletingLastPathComponent().standardizedFileURL else { return nil }
+        while folder.path != "/" {
+            if FileManager.default.fileExists(atPath: folder.appendingPathComponent(".git").path) { return folder }
+            folder = folder.deletingLastPathComponent().standardizedFileURL
+        }
+        return nil
+    }
+
+    /// Opens a new document with the differences between the last commit and the text here.
+    @objc func compareWithGitHead(_ sender: Any?) {
+        guard let url = fileURL, gitRoot != nil else { return NSSound.beep() }
+        let name = url.lastPathComponent
+        let current = textStorage.string
+        let encoding = self.encoding
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            let process = Process()
+            process.executableURL = URL(fileURLWithPath: "/usr/bin/git")
+            process.currentDirectoryURL = url.deletingLastPathComponent()
+            process.arguments = ["show", "HEAD:./\(name)"]
+            let output = Pipe()
+            process.standardOutput = output
+            process.standardError = FileHandle.nullDevice
+            var committed: String?
+            if (try? process.run()) != nil {
+                let data = output.fileHandleForReading.readDataToEndOfFile()
+                process.waitUntilExit()
+                if process.terminationStatus == 0 { committed = TextCodec.decode(data, as: encoding)?.text ?? TextCodec.decode(data)?.text }
+            }
+            let diff = committed.flatMap { UnifiedDiff.make(old: $0, new: current, oldName: "\(name) (HEAD)", newName: "\(name) (now)") }
+            DispatchQueue.main.async {
+                guard committed != nil else {
+                    let alert = NSAlert()
+                    alert.messageText = "“\(name)” isn't in the last commit"
+                    alert.informativeText = "It has not been committed to this Git repository yet."
+                    alert.runModal()
+                    return
+                }
+                self?.showComparison(diff, title: "Changes in \(name) since HEAD", same: "The text is the same as in the last commit.")
+            }
+        }
     }
 
     /// Opens a new document with the differences between this document and another open one.
@@ -486,6 +558,7 @@ final class Document: NSDocument, NSTextStorageDelegate {
     override func validateUserInterfaceItem(_ item: NSValidatedUserInterfaceItem) -> Bool {
         switch item.action {
         case #selector(compareWithSaved(_:)): return fileURL != nil && isComparable
+        case #selector(compareWithGitHead(_:)): return isComparable && gitRoot != nil
         case #selector(compareWithClipboard(_:)): return isComparable
         case #selector(revealInFinder(_:)), #selector(copyPath(_:)), #selector(openTerminalHere(_:)):
             return fileURL != nil
@@ -496,7 +569,8 @@ final class Document: NSDocument, NSTextStorageDelegate {
 
     // MARK: MDReader
 
-    private var isMarkdown: Bool {
+    /// By its syntax or, when that isn't installed, by the file's extension.
+    var isMarkdown: Bool {
         syntax?.definition.id == "markdown"
             || ["md", "markdown", "mdown", "mkd", "mkdn", "mdwn"].contains(fileURL?.pathExtension.lowercased() ?? "")
     }

@@ -80,8 +80,11 @@ final class EditingToolsTests: XCTestCase {
         XCTAssertEqual(snippets, ["for": "for x in y {\n\t$0\n}", "log": "print()"])
         let expanded = Snippets.expand(snippets["for"]!, indent: "  ", unit: "    ")
         XCTAssertEqual(expanded.text, "for x in y {\n      \n  }")
-        XCTAssertEqual(expanded.caret, 19)
-        XCTAssertEqual(Snippets.expand("abc", indent: "", unit: "\t").caret, 3)
+        XCTAssertEqual(expanded.stops, [NSRange(location: 19, length: 0)])
+        XCTAssertEqual(Snippets.expand("abc", indent: "", unit: "\t").stops, [])
+        let stops = Snippets.expand("f($2, ${1:name}) { $0 } // $9.99", indent: "", unit: "")
+        XCTAssertEqual(stops.text, "f(, name) {  } // .99")
+        XCTAssertEqual(stops.stops, [NSRange(location: 4, length: 4), NSRange(location: 2, length: 0), NSRange(location: 18, length: 0), NSRange(location: 12, length: 0)])
     }
 
     func testCalculator() {
@@ -198,5 +201,64 @@ final class ReviewFixTests: XCTestCase {
         XCTAssertFalse(Folding.fits(NSRange(location: 4, length: 5), in: text))
         XCTAssertFalse(Folding.fits(NSRange(location: 3, length: 500), in: text))
         XCTAssertFalse(Folding.fits(NSRange(location: 0, length: 3), in: text))
+    }
+}
+
+final class MoreToolsTests: XCTestCase {
+    func testNameStyles() {
+        XCTAssertEqual(NameStyle.words(of: "maxLineCount"), ["max", "line", "count"])
+        XCTAssertEqual(NameStyle.words(of: "HTTPServerV2"), ["http", "server", "v2"])
+        XCTAssertEqual(NameStyle.next("maxLineCount"), "max_line_count")
+        XCTAssertEqual(NameStyle.next("max_line_count"), "max-line-count")
+        XCTAssertEqual(NameStyle.next("max-line-count"), "MAX_LINE_COUNT")
+        XCTAssertEqual(NameStyle.next("MAX_LINE_COUNT"), "maxLineCount")
+        XCTAssertEqual(NameStyle.next("MaxLine"), "max_line")
+        XCTAssertNil(NameStyle.next("word"))
+        XCTAssertNil(NameStyle.next(""))
+    }
+
+    func testTags() {
+        let text = "<div class=\"a>b\"><p>one<br><img src=x/><b>two</b>\n<p>three</p>\n</div> <span>" as NSString
+        XCTAssertEqual(HTMLTags.unclosed(in: text, before: 30), "p")
+        XCTAssertEqual(HTMLTags.unclosed(in: text, before: text.range(of: "two").location), "b")
+// The first <p> was never closed, so it is still the innermost open tag.
+        XCTAssertEqual(HTMLTags.unclosed(in: text, before: text.range(of: "</div>").location), "p")
+        XCTAssertEqual(HTMLTags.unclosed(in: text, before: text.length), "span")
+        XCTAssertNil(HTMLTags.unclosed(in: "<a>x</a>" as NSString, before: 8))
+        XCTAssertEqual(HTMLTags.partner(in: text, at: 2), text.range(of: "</div>"))
+        XCTAssertEqual(HTMLTags.partner(in: text, at: text.range(of: "</div>").location + 3), NSRange(location: 0, length: 17))
+        let nested = "<ul><ul></ul></ul>" as NSString
+        XCTAssertEqual(HTMLTags.partner(in: nested, at: 1), NSRange(location: 13, length: 5))
+        XCTAssertEqual(HTMLTags.partner(in: nested, at: 10), NSRange(location: 4, length: 4))
+        XCTAssertNil(HTMLTags.partner(in: text, at: text.range(of: "one").location + 1))
+    }
+
+    func testMarkdownTable() {
+        XCTAssertEqual(
+            MarkdownTable.format(["|name|n|", "|:--|--:|", "| a \\| b | 10 |", "long name | 2"])!,
+            ["| name      | n   |", "| :-------- | --: |", "| a \\| b    | 10  |", "| long name | 2   |"])
+        XCTAssertNil(MarkdownTable.format(["no table", "here"]))
+        XCTAssertEqual(MarkdownTable.toggleCheckbox("  - [ ] do"), "  - [x] do")
+        XCTAssertEqual(MarkdownTable.toggleCheckbox("1. [X] do"), "1. [ ] do")
+        XCTAssertEqual(MarkdownTable.toggleCheckbox("* do"), "* [ ] do")
+        XCTAssertEqual(MarkdownTable.toggleCheckbox("  do"), "  - [ ] do")
+        XCTAssertEqual(MarkdownTable.toggleCheckbox(""), "")
+    }
+
+    func testConversions() {
+        XCTAssertEqual(Convert.timestamp("1790928315"), "2026-10-02T08:05:15Z")
+        XCTAssertEqual(Convert.timestamp("1790928315123"), "2026-10-02T08:05:15Z")
+        XCTAssertEqual(Convert.timestamp("2026-10-02T08:05:15Z"), "1790928315")
+        XCTAssertEqual(Convert.timestamp("2026-10-02 08:05:15"), "1790928315")
+        XCTAssertEqual(Convert.timestamp("1970-01-02"), "86400")
+        XCTAssertNil(Convert.timestamp("soon"))
+        XCTAssertEqual(Convert.hex("31"), "0x1F")
+        XCTAssertEqual(Convert.hex("0x1f"), "31")
+        XCTAssertEqual(Convert.hex("ff"), "255")
+        XCTAssertNil(Convert.hex("xyz"))
+        XCTAssertNil(Convert.hex("99999999999999999999999"))
+        XCTAssertEqual(Convert.sortedJSON("{\"b\": 1, \"a\": {\"d\": [2, 1], \"c\": \"x/y\"}}", indent: "  "),
+                       "{\n  \"a\": {\n    \"c\": \"x/y\",\n    \"d\": [\n      2,\n      1\n    ]\n  },\n  \"b\": 1\n}")
+        XCTAssertNil(Convert.sortedJSON("{nope", indent: "  "))
     }
 }

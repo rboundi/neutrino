@@ -1,6 +1,25 @@
 import AppKit
 import NeutrinoCore
 
+/// The last things copied or cut in Neutrino, newest first, for Paste from History. They are
+/// kept in memory only.
+enum ClipboardHistory {
+    private(set) static var entries: [String] = []
+    private static let limit = 10
+    /// A longer copy isn't kept: ten of them would hold a lot of memory.
+    private static let longest = 1_000_000
+
+    /// Takes what is on the clipboard now, right after a copy.
+    static func noteCopy() {
+        guard let copied = NSPasteboard.general.string(forType: .string), !copied.isEmpty,
+            copied.utf16.count <= longest
+        else { return }
+        entries.removeAll { $0 == copied }
+        entries.insert(copied, at: 0)
+        if entries.count > limit { entries.removeLast() }
+    }
+}
+
 /// The abbreviations that Tab expands, kept in one text file the user edits.
 final class SnippetStore {
     static let shared = SnippetStore()
@@ -27,14 +46,18 @@ final class SnippetStore {
         Snippets for Neutrino. Type an abbreviation and press Tab to get its text.
 
         A line that starts with === and a name begins a snippet. The lines under it, up to the
-        next ===, are its text. $0 is where the caret goes. Start a line with a tab for one
-        level of indentation. Text above the first === is not read.
+        next ===, are its text. Start a line with a tab for one level of indentation. Text
+        above the first === is not read.
+
+        $1, $2 and so on are places the caret goes to, in that order, each time you press Tab;
+        $0 is the last. ${1:name} is a place with text already in it, selected when you get there.
 
         === todo
         TODO: $0
 
         === for
-        for (let i = 0; i < $0; i++) {
+        for (let i = 0; i < ${1:count}; i++) {
+        \t$0
         }
 
         """
